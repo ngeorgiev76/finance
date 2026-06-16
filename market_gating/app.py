@@ -78,19 +78,46 @@ html, body, [class*="css"] {
     box-shadow: 0 4px 20px rgba(0,0,0,.3);
 }
 
-/* ---- Signal cards ---- */
-.signal-card {
-    background: linear-gradient(135deg, rgba(30,30,46,.85), rgba(24,24,37,.95));
-    border: 1px solid rgba(255,255,255,.06);
+/* ---- Flip-card signal widgets ---- */
+.flip-card {
+    perspective: 800px;
+    min-height: 270px;
+    margin-bottom: 1rem;
+    cursor: pointer;
+}
+.flip-card-toggle { display: none; }
+.flip-card-inner {
+    position: relative;
+    width: 100%;
+    min-height: 270px;
+    transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    transform-style: preserve-3d;
+}
+.flip-card-toggle:checked + .flip-card-inner {
+    transform: rotateY(180deg);
+}
+.flip-card-front, .flip-card-back {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    min-height: 270px;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
     border-radius: 16px;
     padding: 1.5rem;
-    margin-bottom: 1rem;
+    border: 1px solid rgba(255,255,255,.06);
     box-shadow: 0 4px 20px rgba(0,0,0,.25);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
-.signal-card:hover {
-    transform: translateY(-2px);
+.flip-card-front {
+    background: linear-gradient(135deg, rgba(30,30,46,.85), rgba(24,24,37,.95));
+    z-index: 2;
+}
+.flip-card-front:hover {
     box-shadow: 0 8px 30px rgba(0,0,0,.4);
+}
+.flip-card-back {
+    background: linear-gradient(135deg, rgba(24,24,37,.97), rgba(18,18,28,.98));
+    transform: rotateY(180deg);
+    overflow-y: auto;
 }
 .signal-name {
     font-size: 0.85rem;
@@ -116,6 +143,62 @@ html, body, [class*="css"] {
     font-size: 0.78rem;
     color: #6e6e88;
     font-weight: 500;
+}
+.flip-hint {
+    font-size: 0.7rem;
+    color: #5a5a72;
+    margin-top: 0.5rem;
+    letter-spacing: 0.5px;
+}
+.back-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: #a0a0b8;
+    margin-bottom: 0.6rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.back-section {
+    margin-bottom: 0.55rem;
+}
+.back-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #7a7a94;
+    margin-bottom: 0.15rem;
+}
+.back-text {
+    font-size: 0.76rem;
+    color: #c0c0d4;
+    line-height: 1.35;
+}
+.back-threshold {
+    font-size: 0.72rem;
+    color: #9a9ab4;
+    line-height: 1.4;
+    padding-left: 0.5rem;
+    border-left: 2px solid rgba(255,255,255,.08);
+}
+.back-weight {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.15rem 0.5rem;
+    border-radius: 20px;
+    background: rgba(255,255,255,.06);
+    color: #a0a0b8;
+    letter-spacing: 0.5px;
+}
+.flip-back-hint {
+    font-size: 0.68rem;
+    color: #5a5a72;
+    text-align: center;
+    margin-top: 0.5rem;
 }
 
 /* ---- Progress bar ---- */
@@ -393,35 +476,126 @@ try:
     )
 
     # ------------------------------------------------------------------
-    # Signal detail cards (6 signals, 3 per row)
+    # Signal flip-card widgets (6 signals, 3 per row)
+    # Front: score + progress bar.  Back: methodology & thresholds.
     # ------------------------------------------------------------------
+    SIGNAL_INFO = {
+        "VIX Level": {
+            "icon": "📉",
+            "what": "Measures current implied volatility (VIX) relative to its trailing 1-year distribution.",
+            "how": "Percentile-ranks the VIX close within its 252-day history. Score = 100 − percentile. Bonus +5 if VIX &lt; 15; penalty −10 if VIX &gt; 30.",
+            "why": "The VIX is the market&#39;s fear gauge. Low VIX = calm markets. High VIX = active stress.",
+            "thresholds": "VIX &lt; 15 → calm, bonus · 15–20 → normal · 20–30 → elevated · &gt; 30 → fear, penalty",
+            "weight": "25%",
+        },
+        "VIX Term Structure": {
+            "icon": "📐",
+            "what": "Compares front-month VIX to 3-month VIX (VIX3M) to detect contango vs backwardation.",
+            "how": "Ratio = VIX / VIX3M. Linear map: 0.85 → 100 (steep contango), 1.15 → 0 (backwardation).",
+            "why": "Backwardation (front &gt; back) signals the market is pricing imminent risk — a strong stress indicator.",
+            "thresholds": "&lt; 0.90 → strong contango · 0.90–1.00 → normal · 1.00–1.10 → mild backwardation · &gt; 1.10 → stress",
+            "weight": "20%",
+        },
+        "Market Breadth": {
+            "icon": "📊",
+            "what": "Tracks % of S&amp;P 500 stocks above their 200-day SMA (RSP/SPY ratio fallback).",
+            "how": "Maps breadth %: 80% → score 100, 30% → score 0. Linear interpolation, clamped.",
+            "why": "Narrow rallies driven by a few mega-caps are fragile. Broad participation = healthy rally.",
+            "thresholds": "&gt; 75% → strong · 50–75% → moderate · 35–50% → weakening · &lt; 35% → poor, narrow market",
+            "weight": "20%",
+        },
+        "Credit Spreads": {
+            "icon": "💳",
+            "what": "Monitors high-yield credit stress via the HYG/TLT price ratio z-scored over 1 year.",
+            "how": "Score = (2 − z) / 4 × 100. Z = −2 (tight) → 100, Z = +2 (wide) → 0.",
+            "why": "Credit markets lead equities. Widening spreads = rising default risk = flight to safety.",
+            "thresholds": "Z &lt; −1 → very tight, bullish · −1 to 0 → normal · 0 to +1 → mildly wide · &gt; +1 → stress",
+            "weight": "15%",
+        },
+        "Put/Call Sentiment": {
+            "icon": "🎭",
+            "what": "Uses VIX 20-day rate of change as a proxy for put/call sentiment shifts.",
+            "how": "ROC = (VIX − VIX₂₀ᵈ) / VIX₂₀ᵈ × 100. Map: ROC −30% → 100, ROC +50% → 0.",
+            "why": "Captures momentum of sentiment. Rising VIX = spiking fear. Falling VIX = complacency.",
+            "thresholds": "ROC &lt; −20% → greed · −20% to +10% → neutral · +10% to +30% → fear · &gt; +30% → panic",
+            "weight": "10%",
+        },
+        "Factor Crowding": {
+            "icon": "🔄",
+            "what": "Tracks 60-day rolling correlation between momentum (MTUM) and value (VLUE) factor returns.",
+            "how": "Linear map: corr +0.3 → 100 (normal), corr −0.8 → 0 (extreme crowding).",
+            "why": "Extreme negative correlation = crowded momentum = reversal risk (momentum crash precursor).",
+            "thresholds": "Corr &gt; +0.2 → normal · 0 to +0.2 → mild · −0.3 to 0 → diverging · &lt; −0.3 → crowded",
+            "weight": "10%",
+        },
+    }
+
     st.markdown("### 📊 Individual Signals")
+    st.caption("Click any card to flip it and see methodology, scoring, and interpretation thresholds.")
 
-    # Create columns – up to 3 per row for a clean grid
+    # Render 3 per row
     cols_per_row = 3
-    rows = [signals[i : i + cols_per_row] for i in range(0, len(signals), cols_per_row)]
+    signal_rows = [signals[i : i + cols_per_row] for i in range(0, len(signals), cols_per_row)]
 
-    for row in rows:
+    for row_idx, row in enumerate(signal_rows):
         cols = st.columns(len(row))
-        for col, sig in zip(cols, row):
+        for col_idx, sig in enumerate(zip(cols, row)):
+            col, sig_data = sig
             with col:
-                s_color = score_color(sig["score"])
-                raw_display = sig["raw_value"] if sig["raw_value"] is not None else "N/A"
+                s_color = score_color(sig_data["score"])
+                raw_display = sig_data["raw_value"] if sig_data["raw_value"] is not None else "N/A"
                 if isinstance(raw_display, float):
                     raw_display = f"{raw_display:.4f}"
 
-                pct = max(0, min(100, sig["score"]))
+                pct = max(0, min(100, sig_data["score"]))
+                info = SIGNAL_INFO.get(sig_data["name"], {})
+                card_id = f"flip_{row_idx}_{col_idx}"
+                icon = info.get("icon", "📊")
+                weight = info.get("weight", "")
+
+                # Build threshold lines for the back
+                threshold_html = ""
+                for t in info.get("thresholds", "").split(" · "):
+                    if t.strip():
+                        threshold_html += f"<div>{t.strip()}</div>"
+
                 st.markdown(
                     f"""
-                    <div class='signal-card'>
-                        <div class='signal-name'>{sig["name"]}</div>
-                        <div class='signal-score' style='color:{s_color};'>{sig["score"]:.1f}</div>
-                        <div class='progress-track'>
-                            <div class='progress-fill' style='width:{pct}%; background:{s_color};'></div>
+                    <label class='flip-card' for='{card_id}'>
+                        <input type='checkbox' class='flip-card-toggle' id='{card_id}' />
+                        <div class='flip-card-inner'>
+                            <div class='flip-card-front'>
+                                <div class='signal-name'>{icon} {sig_data["name"]}</div>
+                                <div class='signal-score' style='color:{s_color};'>{sig_data["score"]:.1f}</div>
+                                <div class='progress-track'>
+                                    <div class='progress-fill' style='width:{pct}%; background:{s_color};'></div>
+                                </div>
+                                <div class='signal-raw'>Raw: {raw_display} &nbsp; <span class='back-weight'>Weight: {weight}</span></div>
+                                <div class='signal-detail'>{sig_data.get("detail", "")}</div>
+                                <div class='flip-hint'>↻ Click to see methodology</div>
+                            </div>
+                            <div class='flip-card-back'>
+                                <div class='back-title'>{icon} {sig_data["name"]} <span class='back-weight'>{weight}</span></div>
+                                <div class='back-section'>
+                                    <div class='back-label'>What it measures</div>
+                                    <div class='back-text'>{info.get("what", "")}</div>
+                                </div>
+                                <div class='back-section'>
+                                    <div class='back-label'>Scoring method</div>
+                                    <div class='back-text'>{info.get("how", "")}</div>
+                                </div>
+                                <div class='back-section'>
+                                    <div class='back-label'>Why it matters</div>
+                                    <div class='back-text'>{info.get("why", "")}</div>
+                                </div>
+                                <div class='back-section'>
+                                    <div class='back-label'>Thresholds</div>
+                                    <div class='back-threshold'>{threshold_html}</div>
+                                </div>
+                                <div class='flip-back-hint'>↻ Click to flip back</div>
+                            </div>
                         </div>
-                        <div class='signal-raw'>Raw: {raw_display}</div>
-                        <div class='signal-detail'>{sig.get("detail", "")}</div>
-                    </div>
+                    </label>
                     """,
                     unsafe_allow_html=True,
                 )
@@ -533,44 +707,61 @@ try:
         bt = fetch_backtest()
 
     if bt is not None:
-        bt_tab1, bt_tab2, bt_tab3 = st.tabs(["SPY Chart by Zone", "Composite History", "Performance"])
+        bt_tab1, bt_tab2, bt_tab3, bt_tab4 = st.tabs(["SPY Chart by Zone", "Composite History", "Signal History", "Performance"])
 
         with bt_tab1:
             fig_spy = go.Figure()
 
-            # Plot SPY price as a thin base line
-            fig_spy.add_trace(
-                go.Scatter(
-                    x=bt["dates"],
-                    y=bt["spy_prices"],
-                    mode="lines",
-                    line=dict(color="rgba(255,255,255,0.15)", width=1),
-                    name="SPY",
-                    showlegend=False,
+            dates = bt["dates"]
+            prices = bt["spy_prices"]
+            zones = bt["zones"]
+
+            # --- Background shading: fill vertical bands for each zone period ---
+            zone_alpha = {"FULL DEPLOY": "rgba(0,230,118,0.08)", "REDUCED": "rgba(255,214,0,0.08)", "DEFENSIVE": "rgba(255,23,68,0.12)"}
+            i = 0
+            while i < len(zones):
+                current_zone = zones[i]
+                j = i
+                while j < len(zones) and zones[j] == current_zone:
+                    j += 1
+                # Add a filled rectangle for this contiguous zone block
+                fill_color = zone_alpha.get(current_zone, "rgba(128,128,128,0.05)")
+                fig_spy.add_vrect(
+                    x0=dates[i], x1=dates[min(j, len(dates)-1)],
+                    fillcolor=fill_color, line_width=0, layer="below",
                 )
-            )
+                i = j
 
-            # Overlay zone-coloured segments
-            zone_groups = {"FULL DEPLOY": [], "REDUCED": [], "DEFENSIVE": []}
-            for i, (d, p, z) in enumerate(zip(bt["dates"], bt["spy_prices"], bt["zones"])):
-                if z in zone_groups:
-                    zone_groups[z].append((d, p))
-
-            for zone_label, points in zone_groups.items():
-                if not points:
-                    continue
-                zc = ZONE_COLORS.get(zone_label, "#888")
-                dates_z = [p[0] for p in points]
-                prices_z = [p[1] for p in points]
+            # --- Colored line segments: draw SPY price colored by zone ---
+            # We draw contiguous same-zone segments as separate traces,
+            # overlapping by 1 point at boundaries so there are no gaps.
+            legend_added = set()
+            i = 0
+            while i < len(zones):
+                current_zone = zones[i]
+                j = i
+                while j < len(zones) and zones[j] == current_zone:
+                    j += 1
+                # Extend segment by 1 point into the next zone for seamless join
+                end_idx = min(j, len(dates) - 1)
+                seg_dates = dates[i:end_idx + 1]
+                seg_prices = prices[i:end_idx + 1]
+                zc = ZONE_COLORS.get(current_zone, "#888")
+                show_legend = current_zone not in legend_added
+                legend_added.add(current_zone)
                 fig_spy.add_trace(
                     go.Scatter(
-                        x=dates_z,
-                        y=prices_z,
-                        mode="markers",
-                        marker=dict(color=zc, size=3, opacity=0.7),
-                        name=zone_label,
+                        x=seg_dates,
+                        y=seg_prices,
+                        mode="lines",
+                        line=dict(color=zc, width=2.2),
+                        name=current_zone,
+                        showlegend=show_legend,
+                        legendgroup=current_zone,
+                        hovertemplate="%{x|%Y-%m-%d}<br>SPY: $%{y:.2f}<br>" + current_zone + "<extra></extra>",
                     )
                 )
+                i = j
 
             fig_spy.update_layout(
                 paper_bgcolor="rgba(0,0,0,0)",
@@ -579,22 +770,26 @@ try:
                 xaxis=dict(
                     tickfont=dict(size=10, color="#6e6e88"),
                     gridcolor="rgba(255,255,255,0.04)",
+                    rangeslider=dict(visible=True, thickness=0.04),
                 ),
                 yaxis=dict(
-                    title="SPY Price",
+                    title="SPY Price ($)",
                     tickfont=dict(size=10, color="#6e6e88"),
+                    tickprefix="$",
                     gridcolor="rgba(255,255,255,0.06)",
                 ),
-                margin=dict(l=50, r=30, t=30, b=40),
-                height=450,
+                margin=dict(l=60, r=30, t=30, b=10),
+                height=500,
                 legend=dict(
                     orientation="h",
                     yanchor="bottom",
                     y=1.02,
                     xanchor="center",
                     x=0.5,
-                    font=dict(size=11),
+                    font=dict(size=12),
+                    bgcolor="rgba(0,0,0,0)",
                 ),
+                hovermode="x unified",
             )
             st.plotly_chart(fig_spy, use_container_width=True)
 
@@ -642,6 +837,64 @@ try:
             st.plotly_chart(fig_comp, use_container_width=True)
 
         with bt_tab3:
+            st.caption("Individual signal scores over the backtest period. Toggle signals in the legend.")
+            sig_hist = bt.get("signal_history", {})
+            if sig_hist:
+                fig_sigs = go.Figure()
+                sig_colors = {
+                    "VIX Level": "#8b5cf6",
+                    "VIX Term Structure": "#06b6d4",
+                    "Market Breadth": "#10b981",
+                    "Credit Spreads": "#f59e0b",
+                    "Put/Call Sentiment": "#ef4444",
+                    "Factor Crowding": "#ec4899",
+                }
+                for sig_name, scores in sig_hist.items():
+                    fig_sigs.add_trace(
+                        go.Scatter(
+                            x=bt["dates"],
+                            y=scores,
+                            mode="lines",
+                            line=dict(color=sig_colors.get(sig_name, "#888"), width=1.5),
+                            name=sig_name,
+                            hovertemplate=f"{sig_name}: " + "%{y:.1f}<extra></extra>",
+                        )
+                    )
+                # Zone threshold lines
+                fig_sigs.add_hline(y=70, line_dash="dot", line_color="rgba(0,230,118,0.3)", line_width=1)
+                fig_sigs.add_hline(y=40, line_dash="dot", line_color="rgba(255,214,0,0.3)", line_width=1)
+                fig_sigs.update_layout(
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(family="Inter", color="#e0e0e0"),
+                    xaxis=dict(
+                        tickfont=dict(size=10, color="#6e6e88"),
+                        gridcolor="rgba(255,255,255,0.04)",
+                    ),
+                    yaxis=dict(
+                        title="Signal Score",
+                        range=[0, 100],
+                        tickfont=dict(size=10, color="#6e6e88"),
+                        gridcolor="rgba(255,255,255,0.06)",
+                    ),
+                    margin=dict(l=50, r=30, t=30, b=40),
+                    height=450,
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="center",
+                        x=0.5,
+                        font=dict(size=11),
+                        bgcolor="rgba(0,0,0,0)",
+                    ),
+                    hovermode="x unified",
+                )
+                st.plotly_chart(fig_sigs, use_container_width=True)
+            else:
+                st.info("No signal history data available from the backtest.")
+
+        with bt_tab4:
             perf = bt.get("performance", {})
             if perf:
                 st.markdown("#### 📊 Average SPY Returns by Deployment Zone")
@@ -692,7 +945,7 @@ try:
 
                 st.caption(
                     "Returns are computed using yesterday's deployment zone for today's allocation "
-                    "(no look-ahead bias). Cumulative return is the sum of daily returns in each zone."
+                    "(no look-ahead bias). Cumulative return is the compounded product of daily returns in each zone."
                 )
             else:
                 st.info("No performance data available from the backtest.")

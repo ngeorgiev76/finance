@@ -72,7 +72,12 @@ def compute() -> Dict[str, Any]:
         )
         final_score = int(round(_clamp(score_raw)))
 
-        structure_label = "contango" if ratio < 1.0 else "backwardation"
+        if ratio < 0.98:
+            structure_label = "contango"
+        elif ratio <= 1.02:
+            structure_label = "flat"
+        else:
+            structure_label = "backwardation"
 
         detail = (
             f"VIX={front_close:.2f} | VIX3M={back_close:.2f} | "

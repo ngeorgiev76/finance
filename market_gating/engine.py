@@ -28,7 +28,7 @@ SIGNAL_MODULES = [
 ]
 
 # ---------------------------------------------------------------------------
-# Default weights – equal weight across all 5 signals
+# Default weights – see signals/composite.py for official weights (6 signals)
 # ---------------------------------------------------------------------------
 DEFAULT_WEIGHTS = dict(_COMPOSITE_WEIGHTS)
 

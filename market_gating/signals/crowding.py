@@ -76,9 +76,11 @@ def compute() -> Dict[str, Any]:
 
         # yfinance may return MultiIndex columns (metric, ticker).
         # Flatten to just the ticker level under "Close".
-        if isinstance(data.columns, __import__("pandas").MultiIndex):
+        import pandas as pd
+        if isinstance(data.columns, pd.MultiIndex):
             close = data["Close"]
-            close.columns = close.columns.get_level_values(0)
+            if isinstance(close, pd.DataFrame):
+                close.columns = close.columns.get_level_values(0)
         else:
             close = data[["Close"]]
 
