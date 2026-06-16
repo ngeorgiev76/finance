@@ -58,6 +58,12 @@ html, body, [class*="css"] {
     opacity: 0.7;
     margin-bottom: 0.5rem;
 }
+.hero-sizing {
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-top: 0.5rem;
+    letter-spacing: 1px;
+}
 
 /* ---- Recommendation badge ---- */
 .rec-badge {
@@ -146,7 +152,7 @@ html, body, [class*="css"] {
 .guide-label {
     font-weight: 700;
     font-size: 0.88rem;
-    min-width: 110px;
+    min-width: 120px;
 }
 .guide-range {
     font-size: 0.82rem;
@@ -156,6 +162,49 @@ html, body, [class*="css"] {
 .guide-desc {
     font-size: 0.82rem;
     color: #a0a0b8;
+}
+
+/* ---- Performance table ---- */
+.perf-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 1rem 0;
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(20,20,32,0.7);
+    border: 1px solid rgba(255,255,255,.06);
+}
+.perf-table th {
+    background: rgba(30,30,46,.9);
+    color: #a0a0b8;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 0.75rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.perf-table td {
+    padding: 0.65rem 1rem;
+    font-size: 0.85rem;
+    color: #e0e0e0;
+    border-bottom: 1px solid rgba(255,255,255,.03);
+}
+.perf-table tr:last-child td {
+    border-bottom: none;
+}
+.perf-table tr:hover td {
+    background: rgba(255,255,255,.02);
+}
+.perf-positive {
+    color: #00e676;
+    font-weight: 700;
+}
+.perf-negative {
+    color: #ff1744;
+    font-weight: 700;
 }
 
 /* ---- Sidebar tweaks ---- */
@@ -209,20 +258,23 @@ section[data-testid="stSidebar"] .stSlider label {
 COLOR_MAP = {
     "green": {"bg": "linear-gradient(135deg, #0d3320 0%, #0a2a1a 100%)", "fg": "#00e676", "badge_bg": "#00e676", "badge_fg": "#0a2a1a"},
     "yellow": {"bg": "linear-gradient(135deg, #33300d 0%, #2a280a 100%)", "fg": "#ffd600", "badge_bg": "#ffd600", "badge_fg": "#2a280a"},
-    "orange": {"bg": "linear-gradient(135deg, #331a0d 0%, #2a150a 100%)", "fg": "#ff9100", "badge_bg": "#ff9100", "badge_fg": "#2a150a"},
     "red": {"bg": "linear-gradient(135deg, #330d0d 0%, #2a0a0a 100%)", "fg": "#ff1744", "badge_bg": "#ff1744", "badge_fg": "#2a0a0a"},
     "gray": {"bg": "linear-gradient(135deg, #1e1e2e 0%, #181825 100%)", "fg": "#888", "badge_bg": "#888", "badge_fg": "#1e1e2e"},
+}
+
+ZONE_COLORS = {
+    "FULL DEPLOY": "#00e676",
+    "REDUCED": "#ffd600",
+    "DEFENSIVE": "#ff1744",
 }
 
 
 def score_color(score: float) -> str:
     """Return a CSS colour for a 0-100 score."""
-    if score >= 75:
+    if score >= 70:
         return "#00e676"
-    if score >= 55:
+    if score >= 40:
         return "#ffd600"
-    if score >= 35:
-        return "#ff9100"
     return "#ff1744"
 
 
@@ -239,6 +291,18 @@ def fetch_data(weights_tuple):
     return engine.compute_all(weights=weights)
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_backtest():
+    """Run the 2-year historical backtest (cached for 10 min)."""
+    try:
+        from backtest.deployment_backtest import run_backtest
+        return run_backtest(lookback_years=2)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("Backtest failed")
+        return None
+
+
 def get_recommendation(composite_score: float) -> dict:
     """Thin wrapper around engine recommendation logic."""
     import engine
@@ -252,13 +316,9 @@ def get_recommendation(composite_score: float) -> dict:
 st.sidebar.markdown("## ⚖️ Signal Weights")
 st.sidebar.caption("Adjust weights – they auto-normalise to sum to 1.0")
 
-weight_names = [
-    "VIX Level",
-    "VIX Term Structure",
-    "Market Breadth",
-    "Credit Spreads",
-    "Put/Call Sentiment",
-]
+from signals.composite import SIGNAL_WEIGHTS as _DEFAULT_WEIGHTS
+
+weight_names = list(_DEFAULT_WEIGHTS.keys())
 
 raw_weights: dict[str, float] = {}
 for name in weight_names:
@@ -266,7 +326,7 @@ for name in weight_names:
         name,
         min_value=0.0,
         max_value=1.0,
-        value=0.20,
+        value=_DEFAULT_WEIGHTS[name],
         step=0.05,
         key=f"w_{name}",
     )
@@ -275,7 +335,8 @@ total_w = sum(raw_weights.values())
 if total_w > 0:
     norm_weights = {k: round(v / total_w, 4) for k, v in raw_weights.items()}
 else:
-    norm_weights = {k: 0.20 for k in raw_weights}
+    n = len(raw_weights)
+    norm_weights = {k: round(1.0 / n, 4) for k in raw_weights}
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("##### Normalised Weights")
@@ -315,6 +376,7 @@ try:
     # Hero composite score
     # ------------------------------------------------------------------
     colors = COLOR_MAP.get(rec["color"], COLOR_MAP["gray"])
+    sizing_pct = f"{rec.get('sizing', 1.0):.0%}"
     st.markdown(
         f"""
         <div class='hero-card' style='background: {colors["bg"]}; border-color: {colors["fg"]}22;'>
@@ -323,6 +385,7 @@ try:
             <div class='rec-badge' style='background: {colors["badge_bg"]}; color: {colors["badge_fg"]};'>
                 {rec["label"]}
             </div>
+            <div class='hero-sizing' style='color: {colors["fg"]};'>Position Sizing: {sizing_pct}</div>
             <p style='margin-top:0.75rem; font-size:0.88rem; color:#a0a0b8;'>{rec["description"]}</p>
         </div>
         """,
@@ -330,7 +393,7 @@ try:
     )
 
     # ------------------------------------------------------------------
-    # Signal detail cards
+    # Signal detail cards (6 signals, 3 per row)
     # ------------------------------------------------------------------
     st.markdown("### 📊 Individual Signals")
 
@@ -409,7 +472,7 @@ try:
             height=420,
             showlegend=False,
         )
-        st.plotly_chart(fig_radar, width="stretch")
+        st.plotly_chart(fig_radar, use_container_width=True)
 
     with chart_tab2:
         bar_colors = [score_color(s) for s in signal_scores]
@@ -430,9 +493,8 @@ try:
         )
         # Add threshold lines
         for threshold, label, color in [
-            (75, "Aggressive", "#00e676"),
-            (55, "Moderate", "#ffd600"),
-            (35, "Cautious", "#ff9100"),
+            (70, "Full Deploy", "#00e676"),
+            (40, "Reduced", "#ffd600"),
         ]:
             fig_bar.add_hline(
                 y=threshold,
@@ -460,7 +522,186 @@ try:
             height=400,
             showlegend=False,
         )
-        st.plotly_chart(fig_bar, width="stretch")
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+    # ------------------------------------------------------------------
+    # Historical backtest – SPY chart colour-coded by zone
+    # ------------------------------------------------------------------
+    st.markdown("### 📈 Historical Backtest (2-Year)")
+
+    with st.spinner("Running historical backtest…"):
+        bt = fetch_backtest()
+
+    if bt is not None:
+        bt_tab1, bt_tab2, bt_tab3 = st.tabs(["SPY Chart by Zone", "Composite History", "Performance"])
+
+        with bt_tab1:
+            fig_spy = go.Figure()
+
+            # Plot SPY price as a thin base line
+            fig_spy.add_trace(
+                go.Scatter(
+                    x=bt["dates"],
+                    y=bt["spy_prices"],
+                    mode="lines",
+                    line=dict(color="rgba(255,255,255,0.15)", width=1),
+                    name="SPY",
+                    showlegend=False,
+                )
+            )
+
+            # Overlay zone-coloured segments
+            zone_groups = {"FULL DEPLOY": [], "REDUCED": [], "DEFENSIVE": []}
+            for i, (d, p, z) in enumerate(zip(bt["dates"], bt["spy_prices"], bt["zones"])):
+                if z in zone_groups:
+                    zone_groups[z].append((d, p))
+
+            for zone_label, points in zone_groups.items():
+                if not points:
+                    continue
+                zc = ZONE_COLORS.get(zone_label, "#888")
+                dates_z = [p[0] for p in points]
+                prices_z = [p[1] for p in points]
+                fig_spy.add_trace(
+                    go.Scatter(
+                        x=dates_z,
+                        y=prices_z,
+                        mode="markers",
+                        marker=dict(color=zc, size=3, opacity=0.7),
+                        name=zone_label,
+                    )
+                )
+
+            fig_spy.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(family="Inter", color="#e0e0e0"),
+                xaxis=dict(
+                    tickfont=dict(size=10, color="#6e6e88"),
+                    gridcolor="rgba(255,255,255,0.04)",
+                ),
+                yaxis=dict(
+                    title="SPY Price",
+                    tickfont=dict(size=10, color="#6e6e88"),
+                    gridcolor="rgba(255,255,255,0.06)",
+                ),
+                margin=dict(l=50, r=30, t=30, b=40),
+                height=450,
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="center",
+                    x=0.5,
+                    font=dict(size=11),
+                ),
+            )
+            st.plotly_chart(fig_spy, use_container_width=True)
+
+        with bt_tab2:
+            fig_comp = go.Figure()
+
+            # Zone background bands
+            fig_comp.add_hrect(y0=70, y1=100, fillcolor="rgba(0,230,118,0.06)", line_width=0)
+            fig_comp.add_hrect(y0=40, y1=70, fillcolor="rgba(255,214,0,0.06)", line_width=0)
+            fig_comp.add_hrect(y0=0, y1=40, fillcolor="rgba(255,23,68,0.06)", line_width=0)
+
+            # Composite score line
+            fig_comp.add_trace(
+                go.Scatter(
+                    x=bt["dates"],
+                    y=bt["composite_scores"],
+                    mode="lines",
+                    line=dict(color="#8b5cf6", width=2),
+                    name="Composite Score",
+                )
+            )
+
+            # Threshold lines
+            fig_comp.add_hline(y=70, line_dash="dot", line_color="#00e676", line_width=1)
+            fig_comp.add_hline(y=40, line_dash="dot", line_color="#ffd600", line_width=1)
+
+            fig_comp.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(family="Inter", color="#e0e0e0"),
+                xaxis=dict(
+                    tickfont=dict(size=10, color="#6e6e88"),
+                    gridcolor="rgba(255,255,255,0.04)",
+                ),
+                yaxis=dict(
+                    title="Composite Score",
+                    range=[0, 100],
+                    tickfont=dict(size=10, color="#6e6e88"),
+                    gridcolor="rgba(255,255,255,0.06)",
+                ),
+                margin=dict(l=50, r=30, t=30, b=40),
+                height=400,
+                showlegend=False,
+            )
+            st.plotly_chart(fig_comp, use_container_width=True)
+
+        with bt_tab3:
+            perf = bt.get("performance", {})
+            if perf:
+                st.markdown("#### 📊 Average SPY Returns by Deployment Zone")
+
+                rows_html = ""
+                for zone_label in ["FULL DEPLOY", "REDUCED", "DEFENSIVE"]:
+                    stats = perf.get(zone_label)
+                    if not stats:
+                        continue
+                    zc = ZONE_COLORS.get(zone_label, "#888")
+                    avg_ret = stats.get("avg_daily_return", 0) * 100
+                    total_ret = stats.get("total_return", 0) * 100
+                    days = stats.get("days", 0)
+                    sizing = stats.get("sizing", "—")
+
+                    avg_cls = "perf-positive" if avg_ret >= 0 else "perf-negative"
+                    tot_cls = "perf-positive" if total_ret >= 0 else "perf-negative"
+
+                    rows_html += f"""
+                    <tr>
+                        <td><span style='color:{zc}; font-weight:700;'>●</span> {zone_label}</td>
+                        <td>{sizing}</td>
+                        <td>{days:,}</td>
+                        <td class='{avg_cls}'>{avg_ret:+.4f}%</td>
+                        <td class='{tot_cls}'>{total_ret:+.2f}%</td>
+                    </tr>
+                    """
+
+                st.markdown(
+                    f"""
+                    <table class='perf-table'>
+                        <thead>
+                            <tr>
+                                <th>Zone</th>
+                                <th>Sizing</th>
+                                <th>Days</th>
+                                <th>Avg Daily Return</th>
+                                <th>Cumul. Return</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rows_html}
+                        </tbody>
+                    </table>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                st.caption(
+                    "Returns are computed using yesterday's deployment zone for today's allocation "
+                    "(no look-ahead bias). Cumulative return is the sum of daily returns in each zone."
+                )
+            else:
+                st.info("No performance data available from the backtest.")
+    else:
+        st.warning(
+            "Historical backtest could not be computed. This may happen on first run "
+            "or if market data is temporarily unavailable. The backtest requires ~3 years "
+            "of historical data for 6 different tickers."
+        )
 
     # ------------------------------------------------------------------
     # Score interpretation guide
@@ -468,10 +709,9 @@ try:
     st.markdown("### 📖 Score Interpretation Guide")
 
     guide_items = [
-        ("75 – 100", "AGGRESSIVE", "#00e676", "rgba(0,230,118,0.06)", "Full capital deployment. All macro signals are favourable – lean into positions."),
-        ("55 – 74", "MODERATE", "#ffd600", "rgba(255,214,0,0.06)", "Normal deployment. Conditions are acceptable – standard position sizing."),
-        ("35 – 54", "CAUTIOUS", "#ff9100", "rgba(255,145,0,0.06)", "Reduced deployment. Headwinds detected – tighten stops, smaller positions."),
-        ("0 – 34", "DEFENSIVE", "#ff1744", "rgba(255,23,68,0.06)", "Minimal deployment. Significant macro stress – preserve capital."),
+        ("70 – 100", "FULL DEPLOY", "#00e676", "rgba(0,230,118,0.06)", "Full capital deployment. 100% position sizing. All macro signals favourable."),
+        ("40 – 69", "REDUCED", "#ffd600", "rgba(255,214,0,0.06)", "Reduced deployment. 60% sizing, higher bar for new positions. Some headwinds."),
+        ("0 – 39", "DEFENSIVE", "#ff1744", "rgba(255,23,68,0.06)", "Defensive mode. 25% sizing, no new longs, scanner disabled. Significant risk."),
     ]
 
     for score_range, label, dot_color, bg_color, desc in guide_items:
@@ -493,7 +733,8 @@ try:
     st.markdown(
         f"""
         <div class='footer'>
-            Market Deployment Gate v1.0 &nbsp;·&nbsp; Data via yfinance
+            Market Deployment Gate v2.0 &nbsp;·&nbsp; 6 signals · 3 zones
+            &nbsp;·&nbsp; Data via yfinance
             &nbsp;·&nbsp; Signals refresh every 5 min &nbsp;·&nbsp; {data["timestamp"][:19]}Z
         </div>
         """,
@@ -504,7 +745,7 @@ except Exception as exc:
     st.error(f"Failed to compute market signals: {exc}")
     st.info(
         "This usually means the signal modules in `signals/` are not yet available. "
-        "Make sure all 5 signal modules (vix_level, vix_term_structure, breadth, "
-        "credit_spreads, put_call) exist and expose a `compute()` function."
+        "Make sure all 6 signal modules (vix_level, vix_term_structure, breadth, "
+        "credit_spreads, put_call, crowding) exist and expose a `compute()` function."
     )
     st.exception(exc)

@@ -1,7 +1,7 @@
 """
 Market Deployment Gating Engine
 ===============================
-Aggregates 5 macro signals into a single composite deployment score (0-100).
+Aggregates 6 macro signals into a single composite deployment score (0-100).
 Each signal module exposes a compute() function returning a dict with:
     - name: str
     - score: float (0-100)
@@ -12,7 +12,8 @@ Each signal module exposes a compute() function returning a dict with:
 from datetime import datetime, timezone
 from typing import Optional
 
-from signals import vix_level, vix_term_structure, breadth, credit_spreads, put_call
+from signals import vix_level, vix_term_structure, breadth, credit_spreads, put_call, crowding
+from signals.composite import SIGNAL_WEIGHTS as _COMPOSITE_WEIGHTS, DEPLOYMENT_ZONES, get_zone
 
 # ---------------------------------------------------------------------------
 # Signal registry – order matters only for display
@@ -23,18 +24,13 @@ SIGNAL_MODULES = [
     breadth,
     credit_spreads,
     put_call,
+    crowding,
 ]
 
 # ---------------------------------------------------------------------------
 # Default weights – equal weight across all 5 signals
 # ---------------------------------------------------------------------------
-DEFAULT_WEIGHTS = {
-    "VIX Level": 0.20,
-    "VIX Term Structure": 0.20,
-    "Market Breadth": 0.20,
-    "Credit Spreads": 0.20,
-    "Put/Call Sentiment": 0.20,
-}
+DEFAULT_WEIGHTS = dict(_COMPOSITE_WEIGHTS)
 
 
 def compute_all(weights: Optional[dict] = None) -> dict:
@@ -118,13 +114,8 @@ def compute_all(weights: Optional[dict] = None) -> dict:
 # ---------------------------------------------------------------------------
 # Deployment recommendation logic
 # ---------------------------------------------------------------------------
-
-DEPLOYMENT_TIERS = [
-    {"min": 75, "label": "AGGRESSIVE", "color": "green",  "description": "Full deployment – macro conditions highly favourable"},
-    {"min": 55, "label": "MODERATE",   "color": "yellow", "description": "Normal deployment – conditions acceptable"},
-    {"min": 35, "label": "CAUTIOUS",   "color": "orange", "description": "Reduced deployment – headwinds present"},
-    {"min": 0,  "label": "DEFENSIVE",  "color": "red",    "description": "Minimal deployment – significant macro risk"},
-]
+# Re-export DEPLOYMENT_ZONES for backward compatibility
+DEPLOYMENT_TIERS = DEPLOYMENT_ZONES
 
 
 def get_deployment_recommendation(composite_score: float) -> dict:
@@ -139,24 +130,11 @@ def get_deployment_recommendation(composite_score: float) -> dict:
     -------
     dict
         {
-            "label": str,       # e.g. "AGGRESSIVE"
+            "label": str,       # e.g. "FULL DEPLOY"
             "color": str,       # CSS-friendly colour name
             "description": str, # human-readable explanation
+            "sizing": float,    # position sizing multiplier
             "score": float,     # echo of the input score
         }
     """
-    for tier in DEPLOYMENT_TIERS:
-        if composite_score >= tier["min"]:
-            return {
-                "label": tier["label"],
-                "color": tier["color"],
-                "description": tier["description"],
-                "score": composite_score,
-            }
-    # Fallback (should never reach here)
-    return {
-        "label": "UNKNOWN",
-        "color": "gray",
-        "description": "Unable to determine recommendation",
-        "score": composite_score,
-    }
+    return get_zone(composite_score)
