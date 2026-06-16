@@ -80,8 +80,9 @@ html, body, [class*="css"] {
 
 /* ---- Flip-card signal widgets ---- */
 .flip-card {
+    display: block;
     perspective: 800px;
-    min-height: 270px;
+    min-height: 320px;
     margin-bottom: 1rem;
     cursor: pointer;
 }
@@ -89,7 +90,7 @@ html, body, [class*="css"] {
 .flip-card-inner {
     position: relative;
     width: 100%;
-    min-height: 270px;
+    min-height: 320px;
     transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
     transform-style: preserve-3d;
 }
@@ -99,7 +100,7 @@ html, body, [class*="css"] {
 .flip-card-front, .flip-card-back {
     position: absolute;
     top: 0; left: 0; right: 0;
-    min-height: 270px;
+    min-height: 320px;
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
     border-radius: 16px;
