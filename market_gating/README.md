@@ -73,9 +73,10 @@ All signals have graceful error handling — if a data source is unavailable, th
 
 ```
 market_gating/
-├── app.py                          # Streamlit dashboard
+├── app.py                          # Streamlit dashboard (2 pages)
 ├── engine.py                       # Signal orchestrator & composite scorer
-├── run_macro_gate.py               # CLI entry point
+├── run_macro_gate.py               # CLI: macro gate scorer
+├── run_scanner.py                  # CLI: quantitative stock scanner
 ├── requirements.txt                # Python dependencies
 ├── market_gating.md                # System specification
 ├── signals/
@@ -87,6 +88,10 @@ market_gating/
 │   ├── put_call.py                 # Signal 5: VIX ROC sentiment
 │   ├── crowding.py                 # Signal 6: Factor crowding
 │   └── composite.py                # Weights & zone definitions
+├── scanner/
+│   ├── __init__.py
+│   ├── universe.py                 # S&P 500 constituent loader (Wikipedia)
+│   └── factors.py                  # 5-factor scoring & universe orchestrator
 └── backtest/
     ├── __init__.py
     └── deployment_backtest.py      # 2-year historical backtest engine
@@ -96,9 +101,11 @@ market_gating/
 
 ## Dashboard
 
-The Streamlit dashboard features a dark premium theme with:
+The Streamlit dashboard features a dark premium theme with two pages:
 
-### Hero Section
+### Page 1: Deployment Gate
+
+#### Hero Section
 Large composite score display with zone badge and position sizing recommendation.
 
 ### Interactive Flip-Card Signals
@@ -119,22 +126,46 @@ Four tabs of historical analysis:
 - **Signal History** — Individual signal evolution over time, with toggleable legend per signal
 - **Performance** — Per-zone average daily return, compounded cumulative return, trading days, and sizing
 
+### Page 2: Quantitative Stock Scanner
+
+The scanner page activates only when the macro gate gives the green light:
+
+- **Macro Gate Banner** — Real-time composite score with scanner active/disabled indicator
+- **Results Table** — Top N candidates ranked by composite score, with color-coded factor percentile pills, price, and 1M/3M returns
+- **Factor Breakdown Chart** — Grouped bar chart comparing the top 10 candidates across all 5 factors
+- **Factor Definitions** — Expandable reference explaining each factor's methodology
+
+**Zone gating:** In DEFENSIVE mode, the scanner is completely disabled. In REDUCED mode, only candidates scoring ≥75 are shown.
+
 ### Sidebar Controls
-Adjustable weight sliders for each signal with automatic normalisation to 1.0.
+- Page navigation radio buttons
+- Adjustable weight sliders for each signal with automatic normalisation to 1.0
 
 ---
 
 ## CLI Usage
 
 ```bash
-# Standard output with colored terminal display
+# Macro gate — standard output
 python run_macro_gate.py
 
-# JSON output for scripting/piping
+# Macro gate — JSON output
 python run_macro_gate.py --json
 
-# Compute scores then launch the dashboard
+# Macro gate — then launch dashboard
 python run_macro_gate.py --dashboard
+
+# Stock scanner — auto-detect zone, top 25
+python run_scanner.py
+
+# Stock scanner — top 10
+python run_scanner.py --top 10
+
+# Stock scanner — override zone
+python run_scanner.py --zone "FULL DEPLOY"
+
+# Stock scanner — JSON output
+python run_scanner.py --json
 ```
 
 ### Example Output
