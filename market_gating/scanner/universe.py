@@ -47,7 +47,15 @@ def get_sp500_tickers(*, force_refresh: bool = False) -> list[str]:
 
     logger.info("Fetching S&P 500 constituents from Wikipedia…")
     try:
-        tables = pd.read_html(_WIKI_URL, header=0)
+        import io
+        import requests
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+        }
+        response = requests.get(_WIKI_URL, headers=headers, timeout=15)
+        response.raise_for_status()
+        tables = pd.read_html(io.StringIO(response.text), header=0)
     except Exception:
         logger.exception("Failed to fetch S&P 500 list from Wikipedia")
         if _cached_tickers is not None:
