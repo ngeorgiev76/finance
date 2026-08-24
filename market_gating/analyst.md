@@ -1,6 +1,6 @@
-Build a Claude API analyst layer that scores each scanner candidate on fundamental quality. This is the nondeterministic layer.
+Build a AI Agent API analyst layer that scores each scanner candidate on fundamental quality. This is the nondeterministic layer.
 
-Use Anthropic SDK. API key from .env as ANTHROPIC_API_KEY.
+Allow to use Anthropic, Open AI, Gemini, via token and oAuth, as well as Open Router, Crof.ai, or local LLM model.
 
 Candidate Analyzer (analyst/analyzer.py):
 For each candidate, gather last 4 quarters from yfinance: revenue, net income, operating cash flow, FCF, gross margin, operating margin, debt/equity, ROE. Calculate CFO/NI ratio and AR growth vs revenue growth.

@@ -1,0 +1,5 @@
+.env
+*.pkl
+*.cache
+__pycache__/
+analyst/analysis_cache.db

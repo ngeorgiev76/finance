@@ -73,12 +73,14 @@ All signals have graceful error handling — if a data source is unavailable, th
 
 ```
 market_gating/
-├── app.py                          # Streamlit dashboard (2 pages)
+├── app.py                          # Streamlit dashboard (3 pages)
 ├── engine.py                       # Signal orchestrator & composite scorer
 ├── run_macro_gate.py               # CLI: macro gate scorer
 ├── run_scanner.py                  # CLI: quantitative stock scanner
+├── run_analysis.py                 # CLI: scan + AI analysis + blended ranking
 ├── requirements.txt                # Python dependencies
 ├── market_gating.md                # System specification
+├── analyst.md                      # Analyst module specification
 ├── signals/
 │   ├── __init__.py
 │   ├── vix_level.py                # Signal 1: VIX percentile rank
@@ -92,10 +94,17 @@ market_gating/
 │   ├── __init__.py
 │   ├── universe.py                 # S&P 500 constituent loader (Wikipedia)
 │   └── factors.py                  # 5-factor scoring & universe orchestrator
+├── analyst/
+│   ├── __init__.py
+│   ├── providers.py                # Multi-provider LLM abstraction layer
+│   ├── analyzer.py                 # Fundamental data gathering + LLM scoring
+│   ├── blender.py                  # 60/40 quant-fundamental score blender
+│   └── analysis_cache.db           # SQLite cache (auto-created)
 └── backtest/
     ├── __init__.py
     └── deployment_backtest.py      # 2-year historical backtest engine
 ```
+
 
 ---
 
@@ -135,11 +144,25 @@ The scanner page activates only when the macro gate gives the green light:
 - **Factor Breakdown Chart** — Grouped bar chart comparing the top 10 candidates across all 5 factors
 - **Factor Definitions** — Expandable reference explaining each factor's methodology
 
-**Zone gating:** In DEFENSIVE mode, the scanner is completely disabled. In REDUCED mode, only candidates scoring ≥75 are shown.
+**High-Performance Caching:** The scanner uses a custom **Stale-While-Revalidate Pickle Cache**. It instantly loads 500 stocks from the local disk if the data is less than 1 hour old. If the cache is stale, it serves the UI instantly while spawning a silent background daemon thread to refresh the 1-year price history. This ensures you never wait 60+ seconds for a network pull.
+
+### Page 3: AI Analyst
+
+The analyst page completely decouples the quant scan from the LLM execution to save tokens:
+
+- **Two-Step Pipeline** — First, view the quantitative scanner results. Then, select specific stocks via checkboxes to pass to the LLM.
+- **Ad-Hoc Ticker** — Input any ticker (even outside the Top N scanner list) to instantly run an AI fundamental analysis on it.
+- **Dynamic Model Selection** — The provider dropdown automatically queries the Google API (if Gemini is selected) to list the absolutely newest available models. 
+- **Cost & Token Tracking** — Estimates exact prompt/completion tokens based on model pricing, displaying the **Est. Cost** for the batch run and tracking per-stock token usage.
+- **Blended Rankings Table** — Candidates re-ranked by blended score (60% quant + 40% AI), with 5 dimension score pills (EQ, GT, BS, MT, RF).
+- **Key Disagreements** — Expandable cards highlighting candidates where rank changed by 3+ positions (green glow = upgraded, red glow = downgraded).
+- **Detailed Analysis** — Expandable per-candidate view with AI summary, 5-dimension rationales, quarterly fundamental data table, and exact token usage.
 
 ### Sidebar Controls
-- Page navigation radio buttons
+- Page navigation radio buttons (3 pages)
 - Adjustable weight sliders for each signal with automatic normalisation to 1.0
+- LLM provider and dynamic model selection (visible on AI Analyst page)
+
 
 ---
 
@@ -166,6 +189,24 @@ python run_scanner.py --zone "FULL DEPLOY"
 
 # Stock scanner — JSON output
 python run_scanner.py --json
+
+# AI Analyst — full end-to-end scan + analyze
+python run_analysis.py
+
+# AI Analyst — top 10, explicit provider
+python run_analysis.py --top 10 --provider anthropic
+
+# AI Analyst — with model override
+python run_analysis.py --provider openai --model gpt-4o
+
+# AI Analyst — bypass analysis cache
+python run_analysis.py --force-refresh
+
+# AI Analyst — JSON output
+python run_analysis.py --json
+
+# AI Analyst — then launch dashboard
+python run_analysis.py --dashboard
 ```
 
 ### Example Output

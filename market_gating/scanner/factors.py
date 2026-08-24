@@ -281,19 +281,47 @@ def score_universe(
     # ------------------------------------------------------------------
     # 1. Batch-download 1 year of daily data (single network call)
     # ------------------------------------------------------------------
+    import time
+    import threading
+    from pathlib import Path
+    
     download_tickers = list(set(tickers) | {"SPY"})
-    logger.info(
-        "Downloading 1-year daily data for %d tickers…",
-        len(download_tickers),
-    )
+    cache_file = Path("yfinance_batch.pkl")
+    
+    # ------------------------------------------------------------------
+    # 1. Batch-download 1 year of daily data (Stale-while-revalidate)
+    # ------------------------------------------------------------------
+    def _bg_download():
+        try:
+            logger.info("Background refresh: Downloading new market data silently...")
+            bg_data = yf.download(download_tickers, period="1y", group_by="ticker", threads=True, progress=False)
+            if not bg_data.empty:
+                bg_data.to_pickle(cache_file)
+                logger.info("Background refresh: Successfully updated %s", cache_file)
+        except Exception as e:
+            logger.error("Background refresh failed: %s", e)
 
-    all_data = yf.download(
-        download_tickers,
-        period="1y",
-        group_by="ticker",
-        threads=True,
-        progress=False,
-    )
+    cache_age = time.time() - cache_file.stat().st_mtime if cache_file.exists() else float('inf')
+    
+    if cache_file.exists():
+        if cache_age > 3600:
+            logger.info("Cache is stale (%.1f hrs old). Returning immediately & starting background refresh...", cache_age / 3600)
+            threading.Thread(target=_bg_download, daemon=True).start()
+        else:
+            logger.info("Loading fresh 1-year daily data from local cache...")
+            
+        all_data = pd.read_pickle(cache_file)
+    else:
+        logger.info("No cache found. Initial block: Downloading 1-year daily data for %d tickers...", len(download_tickers))
+        all_data = yf.download(
+            download_tickers,
+            period="1y",
+            group_by="ticker",
+            threads=True,
+            progress=False,
+        )
+        if not all_data.empty:
+            all_data.to_pickle(cache_file)
 
     if all_data.empty:
         logger.error("yfinance returned an empty DataFrame – aborting scan")

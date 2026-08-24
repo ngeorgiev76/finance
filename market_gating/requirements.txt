@@ -4,3 +4,7 @@ pandas
 numpy
 plotly
 lxml
+# Analyst module – install the SDK for your chosen LLM provider:
+# anthropic     # for Anthropic (Claude)
+# openai        # for OpenAI, OpenRouter, Crof.ai, or local LLM
+# google-genai  # for Google Gemini

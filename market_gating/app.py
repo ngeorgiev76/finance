@@ -10,6 +10,19 @@ import plotly.graph_objects as go
 from datetime import datetime, timezone
 
 # ---------------------------------------------------------------------------
+# Load environment variables (from .env)
+# ---------------------------------------------------------------------------
+import os
+from pathlib import Path
+_env_file = Path(".env")
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _v = _line.split("=", 1)
+            os.environ.setdefault(_k.strip(), _v.strip().strip("'\""))
+
+# ---------------------------------------------------------------------------
 # Page config (must be first Streamlit call)
 # ---------------------------------------------------------------------------
 st.set_page_config(
@@ -30,6 +43,24 @@ st.markdown(
 
 html, body, [class*="css"] {
     font-family: 'Inter', sans-serif;
+}
+
+/* ---- Sidebar Readability ---- */
+[data-testid="stSidebar"] {
+    border-right: 1px solid rgba(255,255,255,0.08);
+}
+[data-testid="stSidebar"] .stMarkdown p,
+[data-testid="stSidebar"] .stSelectbox label,
+[data-testid="stSidebar"] .stTextInput label,
+[data-testid="stSidebar"] .stCheckbox p {
+    color: #f8fafc !important; /* Brighter, crisp white for sidebar text */
+    font-weight: 500;
+}
+[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"],
+[data-testid="stSidebar"] .stTextInput input {
+    background-color: #232736 !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
 }
 
 /* ---- Hero card ---- */
@@ -459,7 +490,7 @@ def get_recommendation(composite_score: float) -> dict:
 st.sidebar.markdown("## 🧭 Navigation")
 selected_page = st.sidebar.radio(
     "Page",
-    ["🛡️ Deployment Gate", "📡 Stock Scanner"],
+    ["🛡️ Deployment Gate", "📡 Stock Scanner", "🧠 AI Analyst"],
     label_visibility="collapsed",
     key="nav_page",
 )
@@ -1162,7 +1193,7 @@ def page_scanner():
     # Scanner controls
     col_a, col_b = st.columns([1, 3])
     with col_a:
-        top_n = st.selectbox("Top N candidates", [10, 15, 25, 50], index=2, key="scanner_top_n")
+        top_n = st.selectbox("Top N candidates", [5, 10, 15, 25, 50, 100, 250, 500], index=3, key="scanner_top_n")
 
     # Run scanner
     with st.spinner(f"Scanning S&P 500 universe ({zone_label} mode)…"):
@@ -1318,9 +1349,638 @@ def page_scanner():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Page router
+# PAGE 3: AI Analyst
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _dimension_pill(score: float | None) -> str:
+    """Return an HTML pill for a 1-10 dimension score."""
+    if score is None:
+        return "<span class='factor-pill' style='background:rgba(150,150,150,0.1); color:#888;'>—</span>"
+    if score >= 8:
+        bg, fg = "rgba(0,230,118,0.15)", "#00e676"
+    elif score >= 6:
+        bg, fg = "rgba(0,230,118,0.08)", "#66ffa6"
+    elif score >= 4:
+        bg, fg = "rgba(255,214,0,0.10)", "#ffd600"
+    elif score >= 3:
+        bg, fg = "rgba(255,152,0,0.10)", "#ff9800"
+    else:
+        bg, fg = "rgba(255,23,68,0.10)", "#ff1744"
+    return f"<span class='factor-pill' style='background:{bg}; color:{fg};'>{score:.0f}</span>"
+
+
+def _rank_delta_html(rank_change: int, flag: str | None) -> str:
+    """Return styled HTML for a rank-change delta."""
+    if flag == "upgraded":
+        icon = "▲"
+        color = "#00e676"
+        glow = "0 0 8px rgba(0,230,118,0.5)"
+    elif flag == "downgraded":
+        icon = "▼"
+        color = "#ff1744"
+        glow = "0 0 8px rgba(255,23,68,0.5)"
+    else:
+        icon = ""
+        color = "#a0a0b8"
+        glow = "none"
+    sign = "+" if rank_change > 0 else ""
+    return (
+        f"<span style='color:{color}; font-weight:700; text-shadow:{glow};'>"
+        f"{icon} {sign}{rank_change}</span>"
+    )
+
+
+def _fundamental_score_color(score: float | None) -> str:
+    """Return a CSS colour for a 1-10 fundamental score."""
+    if score is None:
+        return "#888"
+    if score >= 7:
+        return "#00e676"
+    if score >= 5:
+        return "#ffd600"
+    return "#ff1744"
+
+
+def page_analyst():
+    st.markdown("<h1 style='text-align:center; font-weight:900; letter-spacing:-1px; margin-bottom:0;'>🧠 AI Analyst</h1>", unsafe_allow_html=True)
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    st.markdown(f"<p class='timestamp'>Last refreshed: {now_str}</p>", unsafe_allow_html=True)
+
+    # First, get the macro gate to determine the zone
+    try:
+        with st.spinner("Computing macro gate…"):
+            data = fetch_data(weights_tuple)
+        composite = data["composite_score"]
+        rec = get_recommendation(composite)
+        zone_label = rec["label"]
+        zone_color = rec["color"]
+    except Exception as exc:
+        st.error(f"Failed to compute macro gate: {exc}")
+        return
+
+    # Zone status banner
+    colors = COLOR_MAP.get(zone_color, COLOR_MAP["gray"])
+    st.markdown(
+        f"""
+        <div style='background:{colors["bg"]}; border-radius:14px; padding:1rem 1.5rem;
+                    border:1px solid rgba(255,255,255,.08); margin-bottom:1.5rem;
+                    display:flex; align-items:center; justify-content:space-between;'>
+            <div>
+                <span style='font-size:0.8rem; color:#a0a0b8; text-transform:uppercase;
+                             letter-spacing:2px; font-weight:600;'>Macro Gate</span>
+                <div style='font-size:1.8rem; font-weight:800; color:{colors["fg"]};'>
+                    {composite:.0f} — {zone_label}
+                </div>
+            </div>
+            <div style='text-align:right;'>
+                <div style='font-size:0.82rem; color:#a0a0b8;'>Analyst Status</div>
+                <div style='font-size:1.1rem; font-weight:700; color:{colors["fg"]};'>
+                    {"🚫 DISABLED" if zone_label == "DEFENSIVE" else "✅ ACTIVE"}
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if zone_label == "DEFENSIVE":
+        st.warning(
+            "The AI Analyst is **disabled** in DEFENSIVE mode. "
+            "When the macro gate score drops below 40, the system blocks new analysis "
+            "to protect capital during high-risk environments."
+        )
+        st.info("The analyst will automatically re-activate when macro conditions improve.")
+        return
+
+    # ------------------------------------------------------------------
+    # LLM Provider configuration (sidebar)
+    # ------------------------------------------------------------------
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("## 🤖 LLM Provider")
+
+    provider_options = ["Auto-detect", "Anthropic", "OpenAI", "Gemini", "OpenRouter", "Crof.ai", "Local LLM"]
+    provider_choice = st.sidebar.selectbox(
+        "Provider",
+        provider_options,
+        key="analyst_provider",
+    )
+    provider_map = {
+        "Auto-detect": None,
+        "Anthropic": "anthropic",
+        "OpenAI": "openai",
+        "Gemini": "gemini",
+        "OpenRouter": "openrouter",
+        "Crof.ai": "crofai",
+        "Local LLM": "local",
+    }
+
+    @st.cache_data(ttl=86400, show_spinner=False)
+    def _fetch_gemini_models():
+        import requests, os
+        api_key = os.getenv("GEMINI_API_KEY")
+        defaults = ["gemini-3.6-flash", "gemini-3.6-pro", "gemini-2.5-flash", "gemini-2.5-pro"]
+        if not api_key:
+            return defaults
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+            resp = requests.get(url, timeout=3)
+            if resp.status_code == 200:
+                models = [
+                    m["name"].replace("models/", "")
+                    for m in resp.json().get("models", [])
+                    if "generateContent" in m.get("supportedGenerationMethods", [])
+                ]
+                return models if models else defaults
+            return defaults
+        except Exception:
+            return defaults
+
+    KNOWN_MODELS = {
+        "Gemini": _fetch_gemini_models(),
+        "OpenAI": ["gpt-4o", "gpt-4o-mini", "o1-mini"],
+        "Anthropic": ["claude-3-5-sonnet-latest", "claude-3-5-haiku-latest", "claude-3-opus-latest"],
+        "OpenRouter": ["meta-llama/llama-3.1-70b-instruct", "google/gemini-flash-1.5"],
+    }
+
+    if provider_choice in KNOWN_MODELS:
+        model_options = KNOWN_MODELS[provider_choice] + ["Custom..."]
+        selected_model = st.sidebar.selectbox("Model", model_options, key="analyst_model_select")
+        if selected_model == "Custom...":
+            model_override = st.sidebar.text_input("Custom Model ID", key="analyst_model_custom")
+        else:
+            model_override = selected_model
+    else:
+        model_override = st.sidebar.text_input(
+            "Model override (optional)",
+            value="",
+            key="analyst_model",
+            placeholder="e.g. claude-sonnet-4-20250514",
+        )
+
+    # Controls
+    col_a, col_b = st.columns([1, 1])
+    with col_a:
+        top_n = st.selectbox("Scanner Top N Limit", [5, 10, 15, 25, 50, 100, 250, 500], index=1, key="analyst_top_n")
+    with col_b:
+        st.write("")
+        force_refresh = st.checkbox("Force LLM refresh", key="analyst_force")
+
+    # ------------------------------------------------------------------
+    # Step 1: Run quantitative scanner
+    # ------------------------------------------------------------------
+    with st.spinner(f"Scanning S&P 500 universe ({zone_label} mode)…"):
+        scan_result = fetch_scanner(zone_label, top_n=top_n)
+
+    all_candidates = scan_result.get("candidates", [])
+    if scan_result.get("disabled"):
+        st.warning(scan_result.get("reason", "Scanner disabled"))
+        return
+
+    if not all_candidates:
+        st.warning("No scanner candidates found.")
+        return
+
+    # ------------------------------------------------------------------
+    # Step 2: User selection
+    # ------------------------------------------------------------------
+    st.markdown("### 📋 1. Select Candidates for AI Analysis")
+    st.caption("Quantitative scores are pre-computed. Select stocks below to run deep fundamental LLM analysis.")
+    
+    with st.form("candidate_selection"):
+        import pandas as pd
+        df_data = []
+        for c in all_candidates:
+            df_data.append({
+                "Analyze": False,
+                "Ticker": c["ticker"],
+                "Quant Rank": c.get("quant_rank", 0),
+                "Score": round(c["composite"], 1),
+                "Price": f"${c.get('price', 0):.2f}"
+            })
+        df = pd.DataFrame(df_data)
+        
+        edited_df = st.data_editor(
+            df,
+            column_config={"Analyze": st.column_config.CheckboxColumn("Run AI", default=False)},
+            disabled=["Ticker", "Quant Rank", "Score", "Price"],
+            hide_index=True,
+            use_container_width=True
+        )
+        
+        adhoc_ticker = st.text_input("🔍 Or enter Ad-hoc ticker:", placeholder="e.g. AAPL").strip().upper()
+        submitted = st.form_submit_button("Run AI Analysis 🚀")
+        
+    if not submitted:
+        return
+        
+    selected_tickers = edited_df[edited_df["Analyze"]]["Ticker"].tolist()
+    if adhoc_ticker and adhoc_ticker not in selected_tickers:
+        selected_tickers.append(adhoc_ticker)
+        
+    if not selected_tickers:
+        st.info("Please select at least one candidate or enter an ad-hoc ticker.")
+        return
+        
+    # Build the final candidates list for the LLM
+    cand_dict = {c["ticker"]: c for c in all_candidates}
+    candidates = []
+    for t in selected_tickers:
+        if t in cand_dict:
+            candidates.append(cand_dict[t])
+        else:
+            candidates.append({
+                "ticker": t,
+                "composite": 0.0,
+                "factors": {},
+                "price": 0.0,
+                "return_1m": 0.0,
+                "return_3m": 0.0,
+                "quant_rank": "-"
+            })
+
+    # Step 2: Run LLM analysis
+    provider_name = provider_map.get(provider_choice)
+    model_name = model_override.strip() or None
+
+    # Check for provider availability
+    import os as _os
+    provider_available = any([
+        _os.getenv("ANTHROPIC_API_KEY"),
+        _os.getenv("OPENAI_API_KEY"),
+        _os.getenv("GEMINI_API_KEY"),
+        _os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
+        _os.getenv("OPENROUTER_API_KEY"),
+        _os.getenv("CROFAI_API_KEY"),
+        _os.getenv("LOCAL_LLM_URL"),
+        provider_name is not None,
+    ])
+
+    if not provider_available:
+        st.warning(
+            "⚠️ No LLM provider configured. Set one of the following environment variables:\n\n"
+            "- `ANTHROPIC_API_KEY` for Claude\n"
+            "- `OPENAI_API_KEY` for GPT\n"
+            "- `GEMINI_API_KEY` for Gemini\n"
+            "- `OPENROUTER_API_KEY` for OpenRouter\n"
+            "- `CROFAI_API_KEY` for Crof.ai\n"
+            "- `LOCAL_LLM_URL` for local LLM\n\n"
+            "The scanner results are shown below without AI analysis."
+        )
+        # Show scanner-only results
+        st.markdown("### 📡 Scanner Results (No AI Analysis)")
+        for i, c in enumerate(candidates, 1):
+            st.text(f"{i}. {c['ticker']}  —  Quant Score: {c['composite']:.1f}")
+        return
+
+    try:
+        from analyst.providers import get_provider
+        from analyst.analyzer import analyze_candidates
+        from analyst.blender import blend_scores, get_blend_summary
+
+        provider = get_provider(provider_name=provider_name, model=model_name)
+
+        tickers = [c["ticker"] for c in candidates]
+
+        progress_bar = st.progress(0, text="Analyzing candidates…")
+
+        def _analysis_progress(current: int, total: int, ticker: str) -> None:
+            progress_bar.progress(
+                current / total,
+                text=f"Analyzing {ticker} ({current}/{total})…",
+            )
+
+        analysis_results = analyze_candidates(
+            tickers=tickers,
+            provider=provider,
+            force_refresh=force_refresh,
+            progress_callback=_analysis_progress,
+        )
+        progress_bar.empty()
+
+        # Step 3: Blend scores
+        blended = blend_scores(candidates, analysis_results)
+        summary = get_blend_summary(blended)
+
+    except ValueError as exc:
+        st.error(f"LLM provider error: {exc}")
+        return
+    except Exception as exc:
+        st.error(f"Analysis pipeline failed: {exc}")
+        import traceback
+        st.code(traceback.format_exc())
+        return
+
+    # ------------------------------------------------------------------
+    # Summary metrics & Comparison (Only for Top N Scanner)
+    # ------------------------------------------------------------------
+    
+    DIMENSION_LABELS = {
+        "earnings_quality": "EQ",
+        "growth_trajectory": "GT",
+        "balance_sheet_health": "BS",
+        "margin_trends": "MT",
+        "red_flags": "RF",
+    }
+    
+    if len(blended) > 1:
+        # Calculate cost
+        total_prompt_tokens = sum(r.get("analysis", {}).get("usage", {}).get("prompt_tokens", 0) for r in blended)
+        total_comp_tokens = sum(r.get("analysis", {}).get("usage", {}).get("completion_tokens", 0) for r in blended)
+        PRICING_PER_1M = {
+            "gemini-3.6-flash": (0.07, 0.30), "gemini-3.6-pro": (1.25, 5.00),
+            "gemini-2.5-flash": (0.07, 0.30), "gemini-2.5-pro": (1.25, 5.00),
+            "gpt-4o": (2.50, 10.00), "gpt-4o-mini": (0.15, 0.60), "o1-mini": (3.00, 12.00),
+            "claude-3-5-sonnet-latest": (3.00, 15.00), "claude-3-5-haiku-latest": (0.25, 1.25),
+        }
+        prices = PRICING_PER_1M.get(model_name or "gemini-3.6-flash", (0, 0))
+        total_cost = (total_prompt_tokens / 1_000_000) * prices[0] + (total_comp_tokens / 1_000_000) * prices[1]
+
+        m1, m2, m3, m4, m5, m6 = st.columns(6)
+        m1.metric("Candidates", summary["total"])
+        m2.metric("Avg Blended", f"{summary['avg_blended']:.1f}")
+        m3.metric("Avg Quant", f"{summary['avg_quant']:.1f}")
+        m4.metric("Upgraded", f"▲ {summary['upgraded']}", delta=None)
+        m5.metric("Downgraded", f"▼ {summary['downgraded']}", delta=None)
+        m6.metric("Est. Cost", f"${total_cost:.4f}")
+    
+        # ------------------------------------------------------------------
+        # Blended results table
+        # ------------------------------------------------------------------
+        st.markdown("### 🏆 Blended Rankings")
+        st.caption("60% quantitative composite + 40% AI fundamental score. Rank changes of ±3 or more are flagged.")
+    
+        DIMENSION_LABELS = {
+            "earnings_quality": "EQ",
+            "growth_trajectory": "GT",
+            "balance_sheet_health": "BS",
+            "margin_trends": "MT",
+            "red_flags": "RF",
+        }
+    
+        header_html = (
+            "<th>#</th><th>Ticker</th><th>Blended</th><th>Quant</th><th>Fund</th>"
+            + "".join(f"<th>{lbl}</th>" for lbl in DIMENSION_LABELS.values())
+            + "<th>QRank</th><th>Δ</th>"
+        )
+    
+        rows_html = ""
+        for r in blended:
+            blend_sc = r["blended_score"]
+            blend_color = score_color(blend_sc)
+            fund_raw = r.get("fundamental_score_raw")
+            fund_color = _fundamental_score_color(fund_raw)
+    
+            analysis = r.get("analysis", {})
+            dimensions = analysis.get("dimensions", {})
+    
+            dim_cells = ""
+            for dim_key in DIMENSION_LABELS:
+                dim_data = dimensions.get(dim_key, {})
+                dim_score = dim_data.get("score") if isinstance(dim_data, dict) else None
+                dim_cells += f"<td>{_dimension_pill(dim_score)}</td>"
+    
+            fund_str = f"{fund_raw:.1f}" if fund_raw is not None else "—"
+            delta_html = _rank_delta_html(r["rank_change"], r["flag"])
+    
+            # Row background glow for flagged candidates
+            row_style = ""
+            if r["flag"] == "upgraded":
+                row_style = "background: rgba(0,230,118,0.04); border-left: 3px solid #00e676;"
+            elif r["flag"] == "downgraded":
+                row_style = "background: rgba(255,23,68,0.04); border-left: 3px solid #ff1744;"
+    
+            rows_html += f"""
+            <tr style='{row_style}'>
+                <td class='scanner-rank'>{r['blended_rank']}</td>
+                <td class='scanner-ticker'>{r['ticker']}</td>
+                <td><span style='color:{blend_color}; font-weight:700;'>{blend_sc:.1f}</span></td>
+                <td>{r['quant_composite']:.1f}</td>
+                <td><span style='color:{fund_color}; font-weight:700;'>{fund_str}</span></td>
+                {dim_cells}
+                <td style='color:#a0a0b8;'>{r['quant_rank']}</td>
+                <td>{delta_html}</td>
+            </tr>
+            """
+    
+        st.markdown(
+            f"""
+            <table class='scanner-table'>
+                <thead><tr>{header_html}</tr></thead>
+                <tbody>{rows_html}</tbody>
+            </table>
+            """,
+            unsafe_allow_html=True,
+        )
+    
+        # ------------------------------------------------------------------
+        # Quant vs AI score comparison chart
+        # ------------------------------------------------------------------
+        st.markdown("### 📊 Quant vs AI Score Comparison")
+    
+        chart_data = blended[:15]
+        fig_compare = go.Figure()
+    
+        fig_compare.add_trace(go.Bar(
+            name="Quant Score",
+            x=[r["ticker"] for r in chart_data],
+            y=[r["quant_composite"] for r in chart_data],
+            marker_color="#8b5cf6",
+            opacity=0.85,
+        ))
+        fig_compare.add_trace(go.Bar(
+            name="Fund Score (×10)",
+            x=[r["ticker"] for r in chart_data],
+            y=[r["fundamental_score"] for r in chart_data],
+            marker_color="#06b6d4",
+            opacity=0.85,
+        ))
+        fig_compare.add_trace(go.Bar(
+            name="Blended Score",
+            x=[r["ticker"] for r in chart_data],
+            y=[r["blended_score"] for r in chart_data],
+            marker_color="#10b981",
+            opacity=0.85,
+        ))
+    
+        fig_compare.update_layout(
+            barmode="group",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(family="Inter", color="#e0e0e0"),
+            xaxis=dict(tickfont=dict(size=11, color="#a0a0b8")),
+            yaxis=dict(
+                title="Score (0–100)",
+                range=[0, 100],
+                tickfont=dict(size=10, color="#6e6e88"),
+                gridcolor="rgba(255,255,255,0.06)",
+            ),
+            margin=dict(l=50, r=20, t=30, b=40),
+            height=400,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="center",
+                x=0.5,
+                font=dict(size=11),
+                bgcolor="rgba(0,0,0,0)",
+            ),
+        )
+        st.plotly_chart(fig_compare, use_container_width=True)
+    
+        # ------------------------------------------------------------------
+        # Key Disagreements
+        # ------------------------------------------------------------------
+        disagreements = [r for r in blended if r["flag"] is not None]
+        if disagreements:
+            st.markdown("### 🔍 Key Disagreements — Quant vs AI")
+            st.caption(
+                "These are candidates where the quantitative rank and AI-blended rank differ by 3+ positions. "
+                "These divergences often surface the most interesting investment insights."
+            )
+    
+            for r in sorted(disagreements, key=lambda x: abs(x["rank_change"]), reverse=True):
+                analysis = r.get("analysis", {})
+                summary_text = analysis.get("summary", "No analysis available")
+                dimensions = analysis.get("dimensions", {})
+    
+                flag_emoji = "🟢" if r["flag"] == "upgraded" else "🔴"
+                flag_label = "UPGRADED" if r["flag"] == "upgraded" else "DOWNGRADED"
+                delta = r["rank_change"]
+    
+                with st.expander(
+                    f"{flag_emoji} {r['ticker']} — {flag_label} (Δ{delta:+d})  |  "
+                    f"Quant: {r['quant_composite']:.1f}  →  Blended: {r['blended_score']:.1f}"
+                ):
+                    st.markdown(f"**AI Summary:** {summary_text}")
+                    st.markdown("")
+    
+                    # Dimension details
+                    dim_cols = st.columns(5)
+                    for idx, (dim_key, dim_label) in enumerate(DIMENSION_LABELS.items()):
+                        dim_data = dimensions.get(dim_key, {})
+                        dim_score = dim_data.get("score", "—") if isinstance(dim_data, dict) else "—"
+                        dim_rationale = dim_data.get("rationale", "N/A") if isinstance(dim_data, dict) else "N/A"
+    
+                        dim_full_names = {
+                            "EQ": "Earnings Quality",
+                            "GT": "Growth Trajectory",
+                            "BS": "Balance Sheet",
+                            "MT": "Margin Trends",
+                            "RF": "Red Flags",
+                        }
+                        with dim_cols[idx]:
+                            st.metric(dim_full_names.get(dim_label, dim_label), f"{dim_score}/10")
+                            st.caption(dim_rationale)
+    
+    # ------------------------------------------------------------------
+    # Expandable analysis details
+    # ------------------------------------------------------------------
+    st.markdown("### 📋 Detailed Analysis")
+    st.caption("Click any candidate to see the full AI analysis.")
+
+    for r in blended:
+        analysis = r.get("analysis", {})
+        summary_text = analysis.get("summary", "No analysis available")
+        dimensions = analysis.get("dimensions", {})
+        fundamentals = analysis.get("fundamentals", {})
+
+        fund_raw = r.get("fundamental_score_raw")
+        fund_str = f"{fund_raw:.1f}/10" if fund_raw is not None else "N/A"
+        cached = "📦 cached" if analysis.get("cached") else "🔄 fresh"
+
+        with st.expander(
+            f"{r['blended_rank']}. {r['ticker']}  —  Fund: {fund_str}  "
+            f"Blended: {r['blended_score']:.1f}  ({cached})"
+        ):
+            usage = analysis.get("usage", {})
+            if usage:
+                st.caption(f"Tokens used: {usage.get('prompt_tokens', 0):,} prompt / {usage.get('completion_tokens', 0):,} completion")
+            
+            if analysis.get("error"):
+                st.error(f"Analysis error: {analysis['error']}")
+                continue
+
+            st.markdown(f"**Summary:** {summary_text}")
+            st.markdown("")
+
+            # Scores in columns
+            dim_cols = st.columns(5)
+            dim_full_names = {
+                "earnings_quality": "Earnings Quality",
+                "growth_trajectory": "Growth Trajectory",
+                "balance_sheet_health": "Balance Sheet",
+                "margin_trends": "Margin Trends",
+                "red_flags": "Red Flags",
+            }
+            for idx, (dim_key, dim_name) in enumerate(dim_full_names.items()):
+                dim_data = dimensions.get(dim_key, {})
+                dim_score = dim_data.get("score", "—") if isinstance(dim_data, dict) else "—"
+                dim_rationale = dim_data.get("rationale", "N/A") if isinstance(dim_data, dict) else "N/A"
+                with dim_cols[idx]:
+                    st.metric(dim_name, f"{dim_score}/10")
+                    st.caption(dim_rationale)
+
+            # Fundamental data
+            quarters = fundamentals.get("quarters", [])
+            if quarters:
+                st.markdown("**Quarterly Fundamentals:**")
+                q_data = []
+                for q in quarters:
+                    q_row = {
+                        "Quarter": q.get("quarter_end", ""),
+                        "Revenue": f"${q['revenue']:,.0f}" if q.get("revenue") else "—",
+                        "Net Income": f"${q['net_income']:,.0f}" if q.get("net_income") else "—",
+                        "Gross Margin": f"{q['gross_margin']:.1f}%" if q.get("gross_margin") is not None else "—",
+                        "Op Margin": f"{q['operating_margin']:.1f}%" if q.get("operating_margin") is not None else "—",
+                        "D/E": f"{q['debt_equity']:.2f}" if q.get("debt_equity") is not None else "—",
+                        "ROE": f"{q['roe']:.1f}%" if q.get("roe") is not None else "—",
+                    }
+                    q_data.append(q_row)
+                import pandas as _pd
+                st.dataframe(
+                    _pd.DataFrame(q_data),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+    # ------------------------------------------------------------------
+    # Scoring methodology
+    # ------------------------------------------------------------------
+    with st.expander("📖 Methodology"):
+        st.markdown("""
+| Component | Description |
+|-----------|-------------|
+| **Blended Score** | 60% quantitative composite (from scanner) + 40% AI fundamental score (scaled 1–10 → 0–100) |
+| **Earnings Quality** | Is net income backed by real cash flow? CFO/NI ratio > 1.0 is healthy. |
+| **Growth Trajectory** | Revenue and net income QoQ growth trends. Acceleration vs deceleration. |
+| **Balance Sheet Health** | Debt/equity ratio relative to sector norms. Over-leverage risk. |
+| **Margin Trends** | Gross and operating margin trajectory across quarters. |
+| **Red Flags** | Signs of earnings manipulation, AR anomalies, declining cash flow quality. 10 = clean, 1 = severe. |
+| **Rank Change** | Quant rank minus blended rank. Positive = AI upgraded (green), Negative = AI downgraded (red). |
+| **Flag Threshold** | Rank changes of ±3 or more are flagged. These disagreements often surface the most interesting information. |
+
+*AI analysis is cached by (ticker, quarter_end). Same quarter data = free from cache.*
+        """)
+
+    # Footer
+    st.markdown(
+        f"""
+        <div class='footer'>
+            AI Analyst v1.0 &nbsp;·&nbsp; 5 dimensions · LLM-powered
+            &nbsp;·&nbsp; 60/40 quant-fundamental blend
+            &nbsp;·&nbsp; Gated by macro deployment score
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 if selected_page == "🛡️ Deployment Gate":
     page_gate()
-else:
+elif selected_page == "📡 Stock Scanner":
     page_scanner()
+elif selected_page == "🧠 AI Analyst":
+    page_analyst()
