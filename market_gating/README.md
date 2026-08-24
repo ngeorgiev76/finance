@@ -297,11 +297,18 @@ OPENAI_API_KEY="your_openai_api_key_here"
 OPENROUTER_API_KEY="your_openrouter_api_key_here"
 ```
 
-**How it works in the UI:**
-1. Once your `.env` file is saved, start or refresh the dashboard (`streamlit run app.py`).
-2. Navigate to the **🧠 AI Analyst** tab.
-3. In the left sidebar, use the **Provider** dropdown to select your configured LLM (e.g., Gemini, Anthropic).
-4. The **Model** dropdown will dynamically fetch and list the latest available models for that provider (e.g., pulling the live model list directly from the Gemini API).
+### Deployment & Bring-Your-Own-Key (BYOK)
+
+The dashboard is built to securely handle multi-tenant deployments (e.g., deploying publicly on Streamlit Community Cloud):
+
+1. **Global Keys (Host Pays):** If you configure API keys in your `.env` file or via Streamlit Cloud Secrets, the app uses them globally. Your users will seamlessly run analyses without needing to configure anything.
+2. **Bring-Your-Own-Key (User Pays):** If you choose *not* to provide a key for a specific provider, the UI will dynamically display a secure password input field in the sidebar. Users can paste their own API keys on the fly. 
+   - *Security Note:* Custom keys are securely isolated in Streamlit's `session_state`. They are never written to global environment variables, guaranteeing complete tenant isolation so users cannot access each other's API keys or quotas.
+
+**How to use the LLM Analyst:**
+1. Start the dashboard (`streamlit run app.py`) and navigate to the **🧠 AI Analyst** tab.
+2. If your keys are configured, use the **Auto-detect** provider option to instantly detect your environment and list available models.
+3. The **Model** dropdown dynamically queries the provider's API to fetch the absolute latest model versions (e.g., `gemma-4-26b-a4b-it` or `gemini-3.7-flash`).
 
 ---
 
