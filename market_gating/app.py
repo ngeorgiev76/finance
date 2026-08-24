@@ -1475,9 +1475,9 @@ def page_analyst():
     }
 
     @st.cache_data(ttl=86400, show_spinner=False)
-    def _fetch_gemini_models():
+    def _fetch_gemini_models(explicit_key: str | None = None):
         import requests, os
-        api_key = os.getenv("GEMINI_API_KEY")
+        api_key = explicit_key or os.getenv("GEMINI_API_KEY")
         defaults = ["gemini-3.6-flash", "gemini-3.6-pro", "gemini-2.5-flash", "gemini-2.5-pro"]
         if not api_key:
             return defaults
@@ -1495,13 +1495,6 @@ def page_analyst():
         except Exception:
             return defaults
 
-    KNOWN_MODELS = {
-        "Gemini": _fetch_gemini_models(),
-        "OpenAI": ["gpt-4o", "gpt-4o-mini", "o1-mini"],
-        "Anthropic": ["claude-3-5-sonnet-latest", "claude-3-5-haiku-latest", "claude-3-opus-latest"],
-        "OpenRouter": ["meta-llama/llama-3.1-70b-instruct", "google/gemini-flash-1.5"],
-    }
-
     resolved_provider = provider_choice
     if provider_choice == "Auto-detect":
         import os as _os
@@ -1514,10 +1507,58 @@ def page_analyst():
             ("CROFAI_API_KEY", "Crof.ai"),
             ("LOCAL_LLM_URL", "Local LLM"),
         ]:
-            if _os.getenv(env_key):
+            # Also check session state for auto-detect!
+            if _os.getenv(env_key) or st.session_state.get(f"ui_{env_key}"):
                 resolved_provider = pname
                 st.sidebar.caption(f"✨ Auto-detected provider: **{pname}**")
                 break
+
+    # Determine explicit session key if any
+    explicit_key = None
+    if resolved_provider and resolved_provider != "Auto-detect":
+        env_map = {
+            "Anthropic": "ANTHROPIC_API_KEY",
+            "OpenAI": "OPENAI_API_KEY",
+            "Gemini": "GEMINI_API_KEY",
+            "OpenRouter": "OPENROUTER_API_KEY",
+            "Crof.ai": "CROFAI_API_KEY",
+            "Local LLM": "LOCAL_LLM_URL"
+        }
+        env_var = env_map.get(resolved_provider)
+        if env_var:
+            import os as _os
+            has_key = bool(_os.getenv(env_var))
+            if not has_key:
+                try:
+                    if env_var in st.secrets:
+                        has_key = True
+                except Exception:
+                    pass
+            
+            # Use session state key if provided
+            if st.session_state.get(f"ui_{env_var}"):
+                has_key = True
+                explicit_key = st.session_state[f"ui_{env_var}"]
+                
+            if not has_key:
+                ui_key = st.sidebar.text_input(
+                    f"🔑 {resolved_provider} API Key", 
+                    type="password", 
+                    key=f"ui_{env_var}",
+                    help="Enter your API key. It is kept completely private to your session."
+                )
+                if ui_key:
+                    explicit_key = ui_key
+                    if resolved_provider == "Gemini":
+                        _fetch_gemini_models.clear()
+                    st.rerun()
+
+    KNOWN_MODELS = {
+        "Gemini": _fetch_gemini_models(explicit_key if resolved_provider == "Gemini" else None),
+        "OpenAI": ["gpt-4o", "gpt-4o-mini", "o1-mini"],
+        "Anthropic": ["claude-3-5-sonnet-latest", "claude-3-5-haiku-latest", "claude-3-opus-latest"],
+        "OpenRouter": ["meta-llama/llama-3.1-70b-instruct", "google/gemini-flash-1.5"],
+    }
 
     if resolved_provider in KNOWN_MODELS:
         model_options = KNOWN_MODELS[resolved_provider] + ["Custom..."]
@@ -1654,8 +1695,13 @@ def page_analyst():
         from analyst.analyzer import analyze_candidates
         from analyst.blender import blend_scores, get_blend_summary
 
-        provider = get_provider(provider_name=provider_name, model=model_name)
-
+        kwargs = {"provider_name": provider_name, "model": model_name}
+        if explicit_key:
+            if provider_name == "local":
+                kwargs["base_url"] = explicit_key
+            else:
+                kwargs["api_key"] = explicit_key
+        provider = get_provider(**kwargs)
         tickers = [c["ticker"] for c in candidates]
 
         progress_bar = st.progress(0, text="Analyzing candidates…")
