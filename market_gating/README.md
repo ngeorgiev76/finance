@@ -242,18 +242,70 @@ The historical backtest engine (`backtest/deployment_backtest.py`):
 
 ---
 
-## Requirements
+## Requirements & Installation
 
 - Python 3.9+
-- Dependencies: `yfinance`, `streamlit`, `pandas`, `numpy`, `plotly`
+- Dependencies: `yfinance`, `streamlit`, `pandas`, `numpy`, `plotly`, `requests`
 
 ```bash
+# 1. Clone the repository
+git clone https://github.com/ngeorgiev76/finance.git
+cd finance/market_gating
+
+# 2. Create a virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 3. Install dependencies
 pip install -r requirements.txt
 ```
 
 ---
 
-## Configuration
+## Running & Deployment
+
+You can run the full interactive dashboard locally using Streamlit. The dashboard uses port `8501` by default.
+
+```bash
+# Launch the Streamlit dashboard
+streamlit run app.py
+```
+
+*Note: The first time you launch the scanner, it will take ~60 seconds to download the S&P 500 history. Subsequent runs will be instantaneous due to the stale-while-revalidate local cache.*
+
+---
+
+## Configuring LLMs & API Keys
+
+To use the **AI Analyst** feature (Page 3), you must configure at least one Large Language Model (LLM) provider. 
+
+The application automatically loads API keys from a `.env` file in the root directory. Create a file named `.env` and add your preferred provider keys:
+
+```ini
+# .env file
+
+# Google Gemini (Supports AI Studio Developer Keys & Google Cloud Vertex API Keys)
+GEMINI_API_KEY="your_gemini_api_key_here"
+
+# Anthropic (Claude 3.5 Sonnet, Haiku, etc.)
+ANTHROPIC_API_KEY="your_anthropic_api_key_here"
+
+# OpenAI (GPT-4o, o1-mini, etc.)
+OPENAI_API_KEY="your_openai_api_key_here"
+
+# OpenRouter (Llama 3, DeepSeek, etc.)
+OPENROUTER_API_KEY="your_openrouter_api_key_here"
+```
+
+**How it works in the UI:**
+1. Once your `.env` file is saved, start or refresh the dashboard (`streamlit run app.py`).
+2. Navigate to the **🧠 AI Analyst** tab.
+3. In the left sidebar, use the **Provider** dropdown to select your configured LLM (e.g., Gemini, Anthropic).
+4. The **Model** dropdown will dynamically fetch and list the latest available models for that provider (e.g., pulling the live model list directly from the Gemini API).
+
+---
+
+## Advanced Configuration
 
 ### Signal Weights
 
