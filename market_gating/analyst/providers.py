@@ -288,7 +288,17 @@ class GeminiProvider(LLMProvider):
 
         data = resp.json()
         try:
-            return data["candidates"][0]["content"]["parts"][0]["text"]
+            parts = data["candidates"][0]["content"]["parts"]
+            # Find the first part that is not a thought
+            text = ""
+            for p in parts:
+                if not p.get("thought", False):
+                    text = p["text"]
+                    break
+            # Fallback to the last part if all else fails
+            if not text and parts:
+                text = parts[-1]["text"]
+            return text
         except (KeyError, IndexError):
             raise RuntimeError(f"Unexpected response format from Gemini: {data}")
 

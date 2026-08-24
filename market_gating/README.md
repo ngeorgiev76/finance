@@ -152,7 +152,7 @@ The analyst page completely decouples the quant scan from the LLM execution to s
 
 - **Two-Step Pipeline** — First, view the quantitative scanner results. Then, select specific stocks via checkboxes to pass to the LLM.
 - **Ad-Hoc Ticker** — Input any ticker (even outside the Top N scanner list) to instantly run an AI fundamental analysis on it.
-- **Dynamic Model Selection** — The provider dropdown automatically queries the Google API (if Gemini is selected) to list the absolutely newest available models. 
+- **Dynamic Model Selection** — The provider dropdown (including the "Auto-detect" mode) intelligently scans your `.env` keys, visually confirms the detected provider, and queries the respective API (like Google's API) to list the absolutely newest available models. 
 - **Cost & Token Tracking** — Estimates exact prompt/completion tokens based on model pricing, displaying the **Est. Cost** for the batch run and tracking per-stock token usage.
 - **Blended Rankings Table** — Candidates re-ranked by blended score (60% quant + 40% AI), with 5 dimension score pills (EQ, GT, BS, MT, RF).
 - **Key Disagreements** — Expandable cards highlighting candidates where rank changed by 3+ positions (green glow = upgraded, red glow = downgraded).

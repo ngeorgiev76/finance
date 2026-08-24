@@ -1502,8 +1502,25 @@ def page_analyst():
         "OpenRouter": ["meta-llama/llama-3.1-70b-instruct", "google/gemini-flash-1.5"],
     }
 
-    if provider_choice in KNOWN_MODELS:
-        model_options = KNOWN_MODELS[provider_choice] + ["Custom..."]
+    resolved_provider = provider_choice
+    if provider_choice == "Auto-detect":
+        import os as _os
+        for env_key, pname in [
+            ("ANTHROPIC_API_KEY", "Anthropic"),
+            ("OPENAI_API_KEY", "OpenAI"),
+            ("GEMINI_API_KEY", "Gemini"),
+            ("GOOGLE_APPLICATION_CREDENTIALS", "Gemini"),
+            ("OPENROUTER_API_KEY", "OpenRouter"),
+            ("CROFAI_API_KEY", "Crof.ai"),
+            ("LOCAL_LLM_URL", "Local LLM"),
+        ]:
+            if _os.getenv(env_key):
+                resolved_provider = pname
+                st.sidebar.caption(f"✨ Auto-detected provider: **{pname}**")
+                break
+
+    if resolved_provider in KNOWN_MODELS:
+        model_options = KNOWN_MODELS[resolved_provider] + ["Custom..."]
         selected_model = st.sidebar.selectbox("Model", model_options, key="analyst_model_select")
         if selected_model == "Custom...":
             model_override = st.sidebar.text_input("Custom Model ID", key="analyst_model_custom")
