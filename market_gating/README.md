@@ -299,16 +299,21 @@ OPENROUTER_API_KEY="your_openrouter_api_key_here"
 
 ### Deployment & Bring-Your-Own-Key (BYOK)
 
-The dashboard is built to securely handle multi-tenant deployments (e.g., deploying publicly on Streamlit Community Cloud):
+The dashboard is built to seamlessly handle multi-tenant deployments (e.g., deploying publicly on Streamlit Community Cloud):
 
-1. **Global Keys (Host Pays):** If you configure API keys in your `.env` file or via Streamlit Cloud Secrets, the app uses them globally. Your users will seamlessly run analyses without needing to configure anything.
-2. **Bring-Your-Own-Key (User Pays):** If you choose *not* to provide a key for a specific provider, the UI will dynamically display a secure password input field in the sidebar. Users can paste their own API keys on the fly. 
-   - *Security Note:* Custom keys are securely isolated in Streamlit's `session_state`. They are never written to global environment variables, guaranteeing complete tenant isolation so users cannot access each other's API keys or quotas.
+1. **Global Secrets / Environment Variables (Host Pays):** 
+   - Configure API keys in your local `.env` file, environment variables, or in **Streamlit Cloud Settings -> Secrets** (e.g., `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `CROFAI_API_KEY`, `LOCAL_LLM_URL`).
+   - The application automatically detects and utilizes these keys without requiring user intervention.
+2. **Bring-Your-Own-Key (User Pays / Interactive Setup):** 
+   - If no global key is provided or detected, the UI automatically prompts the user to select a provider and enter their API key directly in the sidebar or via an interactive inline card in the **🧠 AI Analyst** tab.
+   - *Security Note:* User-entered keys are stored exclusively in Streamlit's ephemeral `session_state`. They are never written to global environment variables or persisted to disk, ensuring complete privacy and isolation between users.
 
 **How to use the LLM Analyst:**
 1. Start the dashboard (`streamlit run app.py`) and navigate to the **🧠 AI Analyst** tab.
 2. If your keys are configured, use the **Auto-detect** provider option to instantly detect your environment and list available models.
-3. The **Model** dropdown dynamically queries the provider's API to fetch the absolute latest model versions (e.g., `gemma-4-26b-a4b-it` or `gemini-3.7-flash`).
+3. If no key is set in the environment, choose your preferred provider in the sidebar or inline prompt, paste your API key, and click **Save Key & Run 🚀**.
+4. The **Model** dropdown dynamically queries the provider's API to fetch available model versions.
+
 
 ---
 

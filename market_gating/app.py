@@ -1458,7 +1458,19 @@ def page_analyst():
     st.sidebar.markdown("---")
     st.sidebar.markdown("## 🤖 LLM Provider")
 
-    provider_options = ["Auto-detect", "Anthropic", "OpenAI", "Gemini", "OpenRouter", "Crof.ai", "Local LLM"]
+    def _get_env_or_secret(key_name: str) -> str | None:
+        import os
+        val = os.getenv(key_name)
+        if val:
+            return val
+        try:
+            if key_name in st.secrets:
+                return str(st.secrets[key_name])
+        except Exception:
+            pass
+        return None
+
+    provider_options = ["Auto-detect", "Gemini", "Anthropic", "OpenAI", "OpenRouter", "Crof.ai", "Local LLM"]
     provider_choice = st.sidebar.selectbox(
         "Provider",
         provider_options,
@@ -1473,11 +1485,19 @@ def page_analyst():
         "Crof.ai": "crofai",
         "Local LLM": "local",
     }
+    env_map = {
+        "Anthropic": "ANTHROPIC_API_KEY",
+        "OpenAI": "OPENAI_API_KEY",
+        "Gemini": "GEMINI_API_KEY",
+        "OpenRouter": "OPENROUTER_API_KEY",
+        "Crof.ai": "CROFAI_API_KEY",
+        "Local LLM": "LOCAL_LLM_URL",
+    }
 
     @st.cache_data(ttl=86400, show_spinner=False)
     def _fetch_gemini_models(explicit_key: str | None = None):
-        import requests, os
-        api_key = explicit_key or os.getenv("GEMINI_API_KEY")
+        import requests
+        api_key = explicit_key or _get_env_or_secret("GEMINI_API_KEY")
         defaults = ["gemini-3.6-flash", "gemini-3.6-pro", "gemini-2.5-flash", "gemini-2.5-pro"]
         if not api_key:
             return defaults
@@ -1496,8 +1516,8 @@ def page_analyst():
             return defaults
 
     resolved_provider = provider_choice
+    auto_detected = False
     if provider_choice == "Auto-detect":
-        import os as _os
         for env_key, pname in [
             ("ANTHROPIC_API_KEY", "Anthropic"),
             ("OPENAI_API_KEY", "OpenAI"),
@@ -1507,51 +1527,47 @@ def page_analyst():
             ("CROFAI_API_KEY", "Crof.ai"),
             ("LOCAL_LLM_URL", "Local LLM"),
         ]:
-            # Also check session state for auto-detect!
-            if _os.getenv(env_key) or st.session_state.get(f"ui_{env_key}"):
+            if _get_env_or_secret(env_key) or st.session_state.get(f"ui_{env_key}"):
                 resolved_provider = pname
+                auto_detected = True
                 st.sidebar.caption(f"✨ Auto-detected provider: **{pname}**")
                 break
 
+        if not auto_detected:
+            st.sidebar.info("💡 No API key detected in environment. Choose a provider below to enter your key:")
+            resolved_provider = st.sidebar.selectbox(
+                "Select Provider to Configure",
+                ["Gemini", "Anthropic", "OpenAI", "OpenRouter", "Crof.ai", "Local LLM"],
+                key="analyst_autodetect_fallback"
+            )
+
     # Determine explicit session key if any
     explicit_key = None
-    if resolved_provider and resolved_provider != "Auto-detect":
-        env_map = {
-            "Anthropic": "ANTHROPIC_API_KEY",
-            "OpenAI": "OPENAI_API_KEY",
-            "Gemini": "GEMINI_API_KEY",
-            "OpenRouter": "OPENROUTER_API_KEY",
-            "Crof.ai": "CROFAI_API_KEY",
-            "Local LLM": "LOCAL_LLM_URL"
-        }
-        env_var = env_map.get(resolved_provider)
-        if env_var:
-            import os as _os
-            has_key = bool(_os.getenv(env_var))
-            if not has_key:
-                try:
-                    if env_var in st.secrets:
-                        has_key = True
-                except Exception:
-                    pass
-            
-            # Use session state key if provided
-            if st.session_state.get(f"ui_{env_var}"):
-                has_key = True
-                explicit_key = st.session_state[f"ui_{env_var}"]
-                
-            if not has_key:
-                ui_key = st.sidebar.text_input(
-                    f"🔑 {resolved_provider} API Key", 
-                    type="password", 
-                    key=f"ui_{env_var}",
-                    help="Enter your API key. It is kept completely private to your session."
-                )
-                if ui_key:
-                    explicit_key = ui_key
-                    if resolved_provider == "Gemini":
-                        _fetch_gemini_models.clear()
-                    st.rerun()
+    if resolved_provider and resolved_provider in env_map:
+        env_var = env_map[resolved_provider]
+        env_val = _get_env_or_secret(env_var)
+        session_val = st.session_state.get(f"ui_{env_var}")
+
+        if session_val:
+            explicit_key = session_val
+            st.sidebar.caption(f"🔑 Using session key for **{resolved_provider}**")
+        elif env_val:
+            explicit_key = env_val
+        else:
+            label = f"🔑 {resolved_provider} API Key" if resolved_provider != "Local LLM" else "🌐 Local LLM URL"
+            placeholder = "http://localhost:1234/v1" if resolved_provider == "Local LLM" else "Paste API Key..."
+            ui_key = st.sidebar.text_input(
+                label,
+                type="password" if resolved_provider != "Local LLM" else "default",
+                key=f"ui_{env_var}",
+                placeholder=placeholder,
+                help=f"Enter your {resolved_provider} API key. It is kept completely private to your session."
+            )
+            if ui_key:
+                explicit_key = ui_key
+                if resolved_provider == "Gemini":
+                    _fetch_gemini_models.clear()
+                st.rerun()
 
     KNOWN_MODELS = {
         "Gemini": _fetch_gemini_models(explicit_key if resolved_provider == "Gemini" else None),
@@ -1657,33 +1673,51 @@ def page_analyst():
             })
 
     # Step 2: Run LLM analysis
-    provider_name = provider_map.get(provider_choice)
+    provider_name = provider_map.get(resolved_provider)
     model_name = model_override.strip() or None
 
     # Check for provider availability
-    import os as _os
-    provider_available = any([
-        _os.getenv("ANTHROPIC_API_KEY"),
-        _os.getenv("OPENAI_API_KEY"),
-        _os.getenv("GEMINI_API_KEY"),
-        _os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
-        _os.getenv("OPENROUTER_API_KEY"),
-        _os.getenv("CROFAI_API_KEY"),
-        _os.getenv("LOCAL_LLM_URL"),
-        provider_name is not None,
-    ])
+    provider_available = bool(
+        explicit_key
+        or (resolved_provider and resolved_provider in env_map and _get_env_or_secret(env_map[resolved_provider]))
+        or (resolved_provider and resolved_provider in env_map and st.session_state.get(f"ui_{env_map[resolved_provider]}"))
+    )
 
     if not provider_available:
         st.warning(
-            "⚠️ No LLM provider configured. Set one of the following environment variables:\n\n"
-            "- `ANTHROPIC_API_KEY` for Claude\n"
-            "- `OPENAI_API_KEY` for GPT\n"
-            "- `GEMINI_API_KEY` for Gemini\n"
-            "- `OPENROUTER_API_KEY` for OpenRouter\n"
-            "- `CROFAI_API_KEY` for Crof.ai\n"
-            "- `LOCAL_LLM_URL` for local LLM\n\n"
-            "The scanner results are shown below without AI analysis."
+            "⚠️ **No LLM API Key Configured**\n\n"
+            "To run AI fundamental analysis, please provide an API key in the sidebar "
+            "or enter one below:"
         )
+        prov_list = ["Gemini", "Anthropic", "OpenAI", "OpenRouter", "Crof.ai", "Local LLM"]
+        default_idx = prov_list.index(resolved_provider) if resolved_provider in prov_list else 0
+        col_prov, col_key, col_btn = st.columns([1, 2, 1])
+        with col_prov:
+            setup_prov = st.selectbox(
+                "Provider",
+                prov_list,
+                index=default_idx,
+                key="inline_setup_prov"
+            )
+        with col_key:
+            env_v = env_map.get(setup_prov, "GEMINI_API_KEY")
+            setup_key = st.text_input(
+                f"{setup_prov} API Key",
+                type="password" if setup_prov != "Local LLM" else "default",
+                placeholder="Enter API Key or URL...",
+                key="inline_setup_key"
+            )
+        with col_btn:
+            st.write("")
+            st.write("")
+            if st.button("Save Key & Run 🚀", key="inline_save_btn"):
+                if setup_key:
+                    st.session_state[f"ui_{env_v}"] = setup_key
+                    st.rerun()
+                else:
+                    st.error("Please enter a key before submitting.")
+
+        st.markdown("---")
         # Show scanner-only results
         st.markdown("### 📡 Scanner Results (No AI Analysis)")
         for i, c in enumerate(candidates, 1):

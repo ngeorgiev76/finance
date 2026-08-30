@@ -38,6 +38,21 @@ if _env_file.exists():
             _k, _v = _line.split("=", 1)
             os.environ[_k.strip()] = _v.strip().strip("'\"")
 
+
+def _get_config_var(var_name: str, default: str | None = None) -> str | None:
+    """Retrieve configuration variable from os.environ, falling back to st.secrets."""
+    val = os.getenv(var_name)
+    if val:
+        return val
+    try:
+        import streamlit as st
+        if var_name in st.secrets:
+            return str(st.secrets[var_name])
+    except Exception:
+        pass
+    return default
+
+
 # ---------------------------------------------------------------------------
 # Base class
 # ---------------------------------------------------------------------------
@@ -79,8 +94,8 @@ class AnthropicProvider(LLMProvider):
             import anthropic
         except ImportError:
             raise ImportError("pip install anthropic  – required for Anthropic provider")
-        self._model = model or os.getenv("ANALYST_MODEL", "claude-sonnet-4-20250514")
-        key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        self._model = model or _get_config_var("ANALYST_MODEL", "claude-sonnet-4-20250514")
+        key = api_key or _get_config_var("ANTHROPIC_API_KEY")
         if not key:
             raise ValueError("ANTHROPIC_API_KEY not set")
         self._client = anthropic.Anthropic(api_key=key)
@@ -104,8 +119,8 @@ class OpenAIProvider(LLMProvider):
             import openai
         except ImportError:
             raise ImportError("pip install openai  – required for OpenAI provider")
-        self._model = model or os.getenv("ANALYST_MODEL", "gpt-4o")
-        key = api_key or os.getenv("OPENAI_API_KEY")
+        self._model = model or _get_config_var("ANALYST_MODEL", "gpt-4o")
+        key = api_key or _get_config_var("OPENAI_API_KEY")
         if not key and not base_url:
             raise ValueError("OPENAI_API_KEY not set")
         kwargs: dict[str, Any] = {}
@@ -135,7 +150,7 @@ class GeminiProvider(LLMProvider):
     makes raw HTTP requests.
 
     Authentication priority:
-        1. Explicit ``api_key`` argument or ``GEMINI_API_KEY`` env var.
+        1. Explicit ``api_key`` argument or ``GEMINI_API_KEY`` env var / secret.
         2. **Browser-based OAuth2 flow** using a custom Google Cloud Project.
 
     To use OAuth, you must provide your own client secrets at:
@@ -148,8 +163,8 @@ class GeminiProvider(LLMProvider):
     _CREDS_FILE = _CONFIG_DIR / "gemini_oauth_creds.json"
 
     def __init__(self, model: str | None = None, api_key: str | None = None):
-        self._model = model or os.getenv("ANALYST_MODEL", "gemini-3.6-flash")
-        self._api_key = api_key or os.getenv("GEMINI_API_KEY")
+        self._model = model or _get_config_var("ANALYST_MODEL", "gemini-3.6-flash")
+        self._api_key = api_key or _get_config_var("GEMINI_API_KEY")
         self._creds = None
 
         if self._api_key:
@@ -308,8 +323,8 @@ class OpenRouterProvider(LLMProvider):
     """OpenRouter – uses OpenAI-compatible API."""
 
     def __init__(self, model: str | None = None, api_key: str | None = None):
-        self._model = model or os.getenv("ANALYST_MODEL", "anthropic/claude-sonnet-4-20250514")
-        key = api_key or os.getenv("OPENROUTER_API_KEY")
+        self._model = model or _get_config_var("ANALYST_MODEL", "anthropic/claude-sonnet-4-20250514")
+        key = api_key or _get_config_var("OPENROUTER_API_KEY")
         if not key:
             raise ValueError("OPENROUTER_API_KEY not set")
         # Re-use OpenAI SDK with OpenRouter base URL
@@ -327,8 +342,8 @@ class CrofAIProvider(LLMProvider):
     """Crof.ai – uses OpenAI-compatible API."""
 
     def __init__(self, model: str | None = None, api_key: str | None = None):
-        self._model = model or os.getenv("ANALYST_MODEL", "claude-sonnet-4-20250514")
-        key = api_key or os.getenv("CROFAI_API_KEY")
+        self._model = model or _get_config_var("ANALYST_MODEL", "claude-sonnet-4-20250514")
+        key = api_key or _get_config_var("CROFAI_API_KEY")
         if not key:
             raise ValueError("CROFAI_API_KEY not set")
         self._inner = OpenAIProvider(
@@ -345,8 +360,8 @@ class LocalLLMProvider(LLMProvider):
     """Local LLM via any OpenAI-compatible server (LM Studio, Ollama, vLLM, etc.)."""
 
     def __init__(self, model: str | None = None, base_url: str | None = None):
-        url = base_url or os.getenv("LOCAL_LLM_URL", "http://localhost:1234/v1")
-        self._model = model or os.getenv("ANALYST_MODEL", "local-model")
+        url = base_url or _get_config_var("LOCAL_LLM_URL", "http://localhost:1234/v1")
+        self._model = model or _get_config_var("ANALYST_MODEL", "local-model")
         self._inner = OpenAIProvider(
             model=self._model,
             api_key="not-needed",
@@ -382,14 +397,14 @@ def get_provider(
     ----------
     provider_name : str | None
         Provider key (anthropic, openai, gemini, openrouter, crofai, local).
-        Falls back to ``ANALYST_PROVIDER`` env var, then auto-detects from
+        Falls back to ``ANALYST_PROVIDER`` env var / secret, then auto-detects from
         available API keys.
     model : str | None
         Model name override.
     **kwargs
         Passed through to the provider constructor.
     """
-    name = (provider_name or os.getenv("ANALYST_PROVIDER", "")).lower().strip()
+    name = (provider_name or _get_config_var("ANALYST_PROVIDER", "")).lower().strip()
 
     # Auto-detect if not specified
     if not name:
@@ -402,7 +417,7 @@ def get_provider(
             ("CROFAI_API_KEY", "crofai"),
             ("LOCAL_LLM_URL", "local"),
         ]:
-            if os.getenv(env_key):
+            if _get_config_var(env_key):
                 name = pname
                 logger.info("Auto-detected provider: %s (from %s)", name, env_key)
                 break
